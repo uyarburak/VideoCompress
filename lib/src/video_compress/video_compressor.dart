@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -124,8 +123,8 @@ extension Compress on IVideoCompress {
     String path, {
     VideoQuality quality = VideoQuality.DefaultQuality,
     bool deleteOrigin = false,
-    int? startTime,
-    int? duration,
+    int? startTimeMs,
+    int? endTimeMs,
     bool? includeAudio,
     int frameRate = 30,
   }) async {
@@ -146,8 +145,8 @@ extension Compress on IVideoCompress {
       'path': path,
       'quality': quality.index,
       'deleteOrigin': deleteOrigin,
-      'startTime': startTime,
-      'duration': duration,
+      'startTimeMs': startTimeMs,
+      'endTimeMs': endTimeMs,
       'includeAudio': includeAudio,
       'frameRate': frameRate,
     });

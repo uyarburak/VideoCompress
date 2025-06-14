@@ -38,11 +38,11 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             let path = args!["path"] as! String
             let quality = args!["quality"] as! NSNumber
             let deleteOrigin = args!["deleteOrigin"] as! Bool
-            let startTime = args!["startTime"] as? Double
-            let duration = args!["duration"] as? Double
+            let startTimeMs = args!["startTimeMs"] as? Int64
+            let endTimeMs = args!["endTimeMs"] as? Int64
             let includeAudio = args!["includeAudio"] as? Bool
             let frameRate = args!["frameRate"] as? Int
-            compressVideo(path, quality, deleteOrigin, startTime, duration, includeAudio,
+            compressVideo(path, quality, deleteOrigin, startTimeMs, endTimeMs, includeAudio,
                           frameRate, result)
         case "cancelCompression":
             cancelCompression(result)
@@ -156,6 +156,8 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             return AVAssetExportPreset1280x720
         case 7:
             return AVAssetExportPreset1920x1080
+        case 8:
+            return AVAssetExportPreset1280x720
         default:
             return AVAssetExportPresetMediumQuality
         }
@@ -174,8 +176,8 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         return composition    
     }
     
-    private func compressVideo(_ path: String,_ quality: NSNumber,_ deleteOrigin: Bool,_ startTime: Double?,
-                               _ duration: Double?,_ includeAudio: Bool?,_ frameRate: Int?,
+    private func compressVideo(_ path: String,_ quality: NSNumber,_ deleteOrigin: Bool,_ startTimeMs: Int64?,
+                               _ endTimeMs: Int64?,_ includeAudio: Bool?,_ frameRate: Int?,
                                _ result: @escaping FlutterResult) {
         let sourceVideoUrl = Utility.getPathUrl(path)
         let sourceVideoType = "mp4"
@@ -187,17 +189,11 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let compressionUrl =
         Utility.getPathUrl("\(Utility.basePath())/\(Utility.getFileName(path))\(uuid.uuidString).\(sourceVideoType)")
 
-        let timescale = sourceVideoAsset.duration.timescale
-        let minStartTime = Double(startTime ?? 0)
-        
-        let videoDuration = sourceVideoAsset.duration.seconds
-        let minDuration = Double(duration ?? videoDuration)
-        let maxDurationTime = minStartTime + minDuration < videoDuration ? minDuration : videoDuration
-        
-        let cmStartTime = CMTimeMakeWithSeconds(minStartTime, preferredTimescale: timescale)
-        let cmDurationTime = CMTimeMakeWithSeconds(maxDurationTime, preferredTimescale: timescale)
-        let timeRange: CMTimeRange = CMTimeRangeMake(start: cmStartTime, duration: cmDurationTime)
-        
+        let videoDurationInMs = Int(sourceVideoAsset.duration.seconds * 1000)
+        let cmStartTime = CMTimeMake(value: startTimeMs ?? 0, timescale: 1000)
+        let cmEndTime = CMTimeMake(value: endTimeMs ?? videoDurationInMs, timescale: 1000)
+        let timeRange = CMTimeRange(start: cmStartTime, end: cmEndTime)
+
         let isIncludeAudio = includeAudio != nil ? includeAudio! : true
         
         let session = getComposition(isIncludeAudio, timeRange, sourceVideoTrack!)

@@ -5,7 +5,7 @@ import android.net.Uri
 import android.util.Log
 import com.otaliastudios.transcoder.Transcoder
 import com.otaliastudios.transcoder.TranscoderListener
-import com.otaliastudios.transcoder.source.TrimDataSource
+import com.otaliastudios.transcoder.source.ClipDataSource
 import com.otaliastudios.transcoder.source.UriDataSource
 import com.otaliastudios.transcoder.strategy.DefaultAudioStrategy
 import com.otaliastudios.transcoder.strategy.DefaultVideoStrategy
@@ -21,6 +21,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Future
+import android.media.MediaMetadataRetriever
 
 /**
  * VideoCompressPlugin
@@ -78,8 +79,8 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                 val path = call.argument<String>("path")!!
                 val quality = call.argument<Int>("quality")!!
                 val deleteOrigin = call.argument<Boolean>("deleteOrigin")!!
-                val startTime = call.argument<Int>("startTime")
-                val duration = call.argument<Int>("duration")
+                val startTimeMs = call.argument<Long>("startTimeMs")
+                val endTimeMs = call.argument<Long>("endTimeMs")
                 val includeAudio = call.argument<Boolean>("includeAudio") ?: true
                 val frameRate = if (call.argument<Int>("frameRate")==null) 30 else call.argument<Int>("frameRate")
 
@@ -91,38 +92,61 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                 val audioTrackStrategy: TrackStrategy
 
                 when (quality) {
-
                     0 -> {
-                      videoTrackStrategy = DefaultVideoStrategy.atMost(720).build()
+                        videoTrackStrategy = DefaultVideoStrategy.Builder()
+                            .atMost(720)
+                            .frameRate(frameRate ?: 30)
+                            .build()
                     }
-
                     1 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(360).build()
+                        videoTrackStrategy = DefaultVideoStrategy.Builder()
+                            .atMost(360)
+                            .frameRate(frameRate ?: 30)
+                            .build()
                     }
                     2 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(640).build()
+                        videoTrackStrategy = DefaultVideoStrategy.Builder()
+                            .atMost(640)
+                            .frameRate(frameRate ?: 30)
+                            .build()
                     }
                     3 -> {
-
-                        assert(value = frameRate != null)
                         videoTrackStrategy = DefaultVideoStrategy.Builder()
-                                .keyFrameInterval(3f)
-                                .bitRate(1280 * 720 * 4.toLong())
-                                .frameRate(frameRate!!) // will be capped to the input frameRate
-                                .build()
+                            .keyFrameInterval(3f)
+                            .bitRate(1280 * 720 * 4.toLong())
+                            .frameRate(frameRate ?: 30)
+                            .build()
                     }
                     4 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(480, 640).build()
+                        videoTrackStrategy = DefaultVideoStrategy.Builder()
+                            .atMost(480, 640)
+                            .frameRate(frameRate ?: 30)
+                            .build()
                     }
                     5 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(540, 960).build()
+                        videoTrackStrategy = DefaultVideoStrategy.Builder()
+                            .atMost(540, 960)
+                            .frameRate(frameRate ?: 30)
+                            .build()
                     }
                     6 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(720, 1280).build()
+                        videoTrackStrategy = DefaultVideoStrategy.Builder()
+                            .atMost(720, 1280)
+                            .frameRate(frameRate ?: 30)
+                            .build()
                     }
                     7 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(1080, 1920).build()
-                    }                    
+                        videoTrackStrategy = DefaultVideoStrategy.Builder()
+                            .atMost(1080, 1920)
+                            .frameRate(frameRate ?: 30)
+                            .build()
+                    }
+                    8 -> {
+                        videoTrackStrategy = DefaultVideoStrategy.Builder()
+                            .atMost(1280)
+                            .frameRate(frameRate ?: 30)
+                            .build()
+                    }
                 }
 
                 audioTrackStrategy = if (includeAudio) {
@@ -137,9 +161,19 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                     RemoveTrackStrategy()
                 }
 
-                val dataSource = if (startTime != null || duration != null){
+                val dataSource = if (startTimeMs != null || endTimeMs != null){
                     val source = UriDataSource(context, Uri.parse(path))
-                    TrimDataSource(source, (1000 * 1000 * (startTime ?: 0)).toLong(), (1000 * 1000 * (duration ?: 0)).toLong())
+                    val calculatedEndTimeMs = if (endTimeMs == null) {
+                        // Get video duration only if endTimeMs is null
+                        val retriever = MediaMetadataRetriever()
+                        retriever.setDataSource(context, Uri.parse(path))
+                        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0
+                        retriever.release()
+                        durationMs
+                    } else {
+                        endTimeMs
+                    }
+                    ClipDataSource(source, (1000 * (startTimeMs ?: 0)).toLong(), (1000 * calculatedEndTimeMs).toLong())
                 }else{
                     UriDataSource(context, Uri.parse(path))
                 }
