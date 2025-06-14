@@ -159,13 +159,13 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                         // Get video duration only if endTimeMs is null
                         val retriever = MediaMetadataRetriever()
                         retriever.setDataSource(context, Uri.parse(path))
-                        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0
+                        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
                         retriever.release()
                         durationMs
                     } else {
-                        endTimeMs
+                        endTimeMs.toLong()
                     }
-                    ClipDataSource(source, (1000 * (startTimeMs ?: 0)).toLong(), (1000 * calculatedEndTimeMs).toLong())
+                    ClipDataSource(source, (1000L * (startTimeMs ?: 0)).toLong(), (1000L * calculatedEndTimeMs).toLong())
                 }else{
                     UriDataSource(context, Uri.parse(path))
                 }
