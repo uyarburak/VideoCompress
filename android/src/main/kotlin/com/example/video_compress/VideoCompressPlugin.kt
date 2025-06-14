@@ -93,20 +93,17 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
 
                 when (quality) {
                     0 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.Builder()
-                            .atMost(720)
+                        videoTrackStrategy = DefaultVideoStrategy.atMost(720)
                             .frameRate(frameRate ?: 30)
                             .build()
                     }
                     1 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.Builder()
-                            .atMost(360)
+                        videoTrackStrategy = DefaultVideoStrategy.atMost(360)
                             .frameRate(frameRate ?: 30)
                             .build()
                     }
                     2 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.Builder()
-                            .atMost(640)
+                        videoTrackStrategy = DefaultVideoStrategy.atMost(640)
                             .frameRate(frameRate ?: 30)
                             .build()
                     }
@@ -118,32 +115,27 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                             .build()
                     }
                     4 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.Builder()
-                            .atMost(480, 640)
+                        videoTrackStrategy = DefaultVideoStrategy.atMost(480, 640)
                             .frameRate(frameRate ?: 30)
                             .build()
                     }
                     5 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.Builder()
-                            .atMost(540, 960)
+                        videoTrackStrategy = DefaultVideoStrategy.atMost(540, 960)
                             .frameRate(frameRate ?: 30)
                             .build()
                     }
                     6 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.Builder()
-                            .atMost(720, 1280)
+                        videoTrackStrategy = DefaultVideoStrategy.atMost(720, 1280)
                             .frameRate(frameRate ?: 30)
                             .build()
                     }
                     7 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.Builder()
-                            .atMost(1080, 1920)
+                        videoTrackStrategy = DefaultVideoStrategy.atMost(1080, 1920)
                             .frameRate(frameRate ?: 30)
                             .build()
                     }
                     8 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.Builder()
-                            .atMost(1280)
+                        videoTrackStrategy = DefaultVideoStrategy.atMost(1280)
                             .frameRate(frameRate ?: 30)
                             .build()
                     }
