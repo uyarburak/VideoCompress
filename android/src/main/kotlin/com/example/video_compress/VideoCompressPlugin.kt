@@ -134,11 +134,6 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                             .frameRate(frameRate ?: 30)
                             .build()
                     }
-                    8 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(1280)
-                            .frameRate(frameRate ?: 30)
-                            .build()
-                    }
                 }
 
                 audioTrackStrategy = if (includeAudio) {
