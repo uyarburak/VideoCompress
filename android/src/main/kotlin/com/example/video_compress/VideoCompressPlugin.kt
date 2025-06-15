@@ -6,6 +6,7 @@ import android.util.Log
 import com.otaliastudios.transcoder.Transcoder
 import com.otaliastudios.transcoder.TranscoderListener
 import com.otaliastudios.transcoder.source.ClipDataSource
+import com.otaliastudios.transcoder.source.TrimDataSource
 import com.otaliastudios.transcoder.source.UriDataSource
 import com.otaliastudios.transcoder.strategy.DefaultAudioStrategy
 import com.otaliastudios.transcoder.strategy.DefaultVideoStrategy
@@ -21,7 +22,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Future
-import android.media.MediaMetadataRetriever
 
 /**
  * VideoCompressPlugin
@@ -155,17 +155,11 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
 
                 val dataSource = if (startTimeMs != null || endTimeMs != null){
                     val source = UriDataSource(context, Uri.parse(path))
-                    val calculatedEndTimeMs = if (endTimeMs == null) {
-                        // Get video duration only if endTimeMs is null
-                        val retriever = MediaMetadataRetriever()
-                        retriever.setDataSource(context, Uri.parse(path))
-                        val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLong() ?: 0L
-                        retriever.release()
-                        durationMs
+                    if (endTimeMs == null) {
+                        TrimDataSource(source, (1000L * (startTimeMs ?: 0)).toLong())
                     } else {
-                        endTimeMs.toLong()
+                        ClipDataSource(source, (1000L * (startTimeMs ?: 0)).toLong(), (1000L * endTimeMs.toLong()).toLong())
                     }
-                    ClipDataSource(source, (1000L * (startTimeMs ?: 0)).toLong(), (1000L * calculatedEndTimeMs).toLong())
                 }else{
                     UriDataSource(context, Uri.parse(path))
                 }
