@@ -273,10 +273,10 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
 
         if needsVideoComposition {
             let instruction = AVMutableVideoCompositionInstruction()
-            instruction.timeRange = CMTimeRange(start: .zero, duration: sourceVideoAsset.duration)
+            instruction.timeRange = CMTimeRange(start: CMTime.zero, duration: sourceVideoAsset.duration)
             
             let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceVideoTrack)
-            transformer.setTransform(sourceVideoTrack.preferredTransform, at: .zero)
+            transformer.setTransform(sourceVideoTrack.preferredTransform, at: CMTime.zero)
             
             instruction.layerInstructions = [transformer]
             videoComposition.instructions = [instruction]
