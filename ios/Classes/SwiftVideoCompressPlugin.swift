@@ -204,7 +204,8 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let exportPreset = getExportPreset(quality)
         log("Setting up export session with quality: \(exportPreset)")
 
-        guard let exporter = AVAssetExportSession(asset: session, presetName: exportPreset) else {
+        var exporter = AVAssetExportSession(asset: session, presetName: exportPreset)
+        guard exporter != nil else {
             log("Error: Could not create AVAssetExportSession.")
             result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
             return
