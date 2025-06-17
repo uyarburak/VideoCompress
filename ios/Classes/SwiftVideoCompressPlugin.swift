@@ -36,11 +36,11 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             getMediaInfo(path, result)
         case "compressVideo":
             let path = args!["path"] as! String
-            let quality = args!["quality"] as! NSNumber
+            let maxDimension = args!["maxDimension"] as! Int
             let startTimeMs = args!["startTimeMs"] as? Int64
             let endTimeMs = args!["endTimeMs"] as? Int64
             let frameRate = args!["frameRate"] as? Int
-            compressVideo(path, quality, startTimeMs, endTimeMs, frameRate, result)
+            compressVideo(path, maxDimension, startTimeMs, endTimeMs, frameRate, result)
         case "cancelCompression":
             cancelCompression(result)
         case "deleteAllCache":
@@ -137,7 +137,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         }
     }
     
-    private func compressVideo(_ path: String,_ quality: NSNumber,_ startTimeMs: Int64?,
+    private func compressVideo(_ path: String,_ maxDimensionPx: Int,_ startTimeMs: Int64?,
                                _ endTimeMs: Int64?,_ frameRate: Int?,
                                _ result: @escaping FlutterResult) {
 
@@ -218,7 +218,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let videoComposition = AVMutableVideoComposition()
 
         // NEW: Define the maximum dimension allowed for the output video
-        let maxDimension: CGFloat = 1280.0
+        let maxDimension: CGFloat = CGFloat(maxDimensionPx)
 
         let originalSize = sourceVideoTrack.naturalSize
         var targetSize = originalSize

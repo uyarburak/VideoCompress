@@ -130,7 +130,7 @@ extension Compress on IVideoCompress {
   /// ```
   Future<MediaInfo?> compressVideo(
     String path, {
-    VideoQuality quality = VideoQuality.DefaultQuality,
+    int maxDimension = 1280,
     int? startTimeMs,
     int? endTimeMs,
     int frameRate = 30,
@@ -150,7 +150,7 @@ extension Compress on IVideoCompress {
     setProcessingStatus(true);
     final jsonStr = await _invoke<String>('compressVideo', {
       'path': path,
-      'quality': quality.index,
+      'maxDimension': maxDimension,
       'startTimeMs': startTimeMs,
       'endTimeMs': endTimeMs,
       'frameRate': frameRate,

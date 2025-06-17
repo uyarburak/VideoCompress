@@ -77,7 +77,7 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
             }
             "compressVideo" -> {
                 val path = call.argument<String>("path")!!
-                val quality = call.argument<Int>("quality")!!
+                val maxDimension = call.argument<Int>("maxDimension")!!
                 val startTimeMs = call.argument<Int>("startTimeMs")
                 val endTimeMs = call.argument<Int>("endTimeMs")
                 val frameRate = if (call.argument<Int>("frameRate")==null) 30 else call.argument<Int>("frameRate")
@@ -86,53 +86,11 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                 val out = SimpleDateFormat("yyyy-MM-dd hh-mm-ss").format(Date())
                 val destPath: String = tempDir + File.separator + "VID_" + out + path.hashCode() + ".mp4"
 
-                var videoTrackStrategy: TrackStrategy = DefaultVideoStrategy.atMost(340).build();
                 val audioTrackStrategy: TrackStrategy
 
-                when (quality) {
-                    0 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(720)
+                val videoTrackStrategy = DefaultVideoStrategy.atMost(maxDimension)
                             .frameRate(frameRate ?: 30)
                             .build()
-                    }
-                    1 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(360)
-                            .frameRate(frameRate ?: 30)
-                            .build()
-                    }
-                    2 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(640)
-                            .frameRate(frameRate ?: 30)
-                            .build()
-                    }
-                    3 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.Builder()
-                            .keyFrameInterval(3f)
-                            .bitRate(1280 * 720 * 4.toLong())
-                            .frameRate(frameRate ?: 30)
-                            .build()
-                    }
-                    4 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(480, 640)
-                            .frameRate(frameRate ?: 30)
-                            .build()
-                    }
-                    5 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(540, 960)
-                            .frameRate(frameRate ?: 30)
-                            .build()
-                    }
-                    6 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(720, 1280)
-                            .frameRate(frameRate ?: 30)
-                            .build()
-                    }
-                    7 -> {
-                        videoTrackStrategy = DefaultVideoStrategy.atMost(1080, 1920)
-                            .frameRate(frameRate ?: 30)
-                            .build()
-                    }
-                }
 
                 val sampleRate = DefaultAudioStrategy.SAMPLE_RATE_AS_INPUT
                 val channels = DefaultAudioStrategy.CHANNELS_AS_INPUT
