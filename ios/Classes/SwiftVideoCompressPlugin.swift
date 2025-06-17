@@ -187,7 +187,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let compressionUrl =
         Utility.getPathUrl("\(Utility.basePath())/\(Utility.getFileName(path))\(uuid.uuidString).\(sourceVideoType)")
 
-        let videoDurationInMs = Int(sourceVideoAsset.duration.seconds * 1000)
+        let videoDurationInMs = Int64(sourceVideoAsset.duration.seconds * 1000)
         let cmStartTime = CMTimeMake(value: startTimeMs ?? 0, timescale: 1000)
         let cmEndTime = CMTimeMake(value: endTimeMs ?? videoDurationInMs, timescale: 1000)
         let timeRange = CMTimeRange(start: cmStartTime, end: cmEndTime)
