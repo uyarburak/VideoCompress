@@ -289,8 +289,8 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         videoComposition.instructions = [instruction]
         
         // When using a custom video composition, AVAssetExportPresetPassthrough is often best.
-        log("Setting up export session with Passthrough preset to respect custom composition.")
-        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
+        log("Setting up export session with AVAssetExportPresetHighestQuality preset to respect custom composition.")
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
             log("Error: Could not create AVAssetExportSession.")
             DispatchQueue.main.async {
                 result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
