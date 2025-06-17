@@ -207,7 +207,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
 
         guard let compositionVideoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
             log("Error: Could not create video track in composition.")
-            sendResult(FlutterError(code: "composition_error", message: "Failed to create video track in composition.", details: nil))
+            result(FlutterError(code: "composition_error", message: "Failed to create video track in composition.", details: nil))
             return
         }
         
@@ -216,7 +216,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             try compositionVideoTrack.insertTimeRange(timeRange, of: sourceVideoTrack, at: .zero)
         } catch {
             log("Error inserting video track: \(error.localizedDescription)")
-            sendResult(FlutterError(code: "composition_error", message: "Error inserting video track: \(error.localizedDescription)", details: nil))
+            result(FlutterError(code: "composition_error", message: "Error inserting video track: \(error.localizedDescription)", details: nil))
             return
         }
 
@@ -308,7 +308,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
 
         guard let exporter = AVAssetExportSession(asset: composition, presetName: exportPreset) else {
             log("Error: Could not create AVAssetExportSession.")
-            sendResult(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
+            result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
             return
         }
         
