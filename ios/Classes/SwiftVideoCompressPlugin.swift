@@ -272,17 +272,23 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         }
 
         if needsVideoComposition {
-            let instruction = AVMutableVideoCompositionInstruction()
-            instruction.timeRange = CMTimeRange(start: CMTime.zero, duration: sourceVideoAsset.duration)
-            
-            let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceVideoTrack)
-            transformer.setTransform(sourceVideoTrack.preferredTransform, at: CMTime.zero)
-            
-            instruction.layerInstructions = [transformer]
-            videoComposition.instructions = [instruction]
-            
-            exporter.videoComposition = videoComposition
-            log("Applied custom video composition.")
+            do {
+                let instruction = AVMutableVideoCompositionInstruction()
+                instruction.timeRange = CMTimeRange(start: CMTime.zero, duration: sourceVideoAsset.duration)
+                
+                let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceVideoTrack)
+                transformer.setTransform(sourceVideoTrack.preferredTransform, at: CMTime.zero)
+                
+                instruction.layerInstructions = [transformer]
+                videoComposition.instructions = [instruction]
+                
+                exporter.videoComposition = videoComposition
+                log("Applied custom video composition.")
+            } catch {
+                log("Error applying video composition: \(error.localizedDescription)")
+                // Continue without video composition
+                needsVideoComposition = false
+            }
         }
         
         log("Starting export...")
