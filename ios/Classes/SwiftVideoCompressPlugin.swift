@@ -272,7 +272,12 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let scaleY = finalSize.height / assetSize.height
         let scaleTransform = CGAffineTransform(scaleX: scaleX, y: scaleY)
         
-        let finalTransform = sourceVideoTrack.preferredTransform.concatenating(scaleTransform)
+        let tmpTransform = sourceVideoTrack.preferredTransform.concatenating(scaleTransform)
+
+        // Center the video
+        let xOffset = (finalSize.width - assetSize.width * scaleX) / 2
+        let yOffset = (finalSize.height - assetSize.height * scaleY) / 2
+        let finalTransform = tmpTransform.concatenating(CGAffineTransform(translationX: xOffset, y: yOffset))
 
         let instruction = AVMutableVideoCompositionInstruction()
         instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
@@ -284,6 +289,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         videoComposition.instructions = [instruction]
         
         // When using a custom video composition, AVAssetExportPresetPassthrough is often best.
+        log("Setting up export session with Passthrough preset to respect custom composition.")
         guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
             log("Error: Could not create AVAssetExportSession.")
             DispatchQueue.main.async {
