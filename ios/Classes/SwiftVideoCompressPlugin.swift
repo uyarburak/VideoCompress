@@ -211,7 +211,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         log("Time range: \(timeRange.start.seconds)s to \(timeRange.end.seconds)s")
         
         log("Creating composition...")
-        let session = sourceVideoTrack!.asset!
+        let session = sourceVideoTrack.asset!
         
         let exportPreset = getExportPreset(quality)
         log("Setting up export session with quality: \(exportPreset)")
@@ -223,7 +223,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         }
         
         exporter.outputURL = compressionUrl
-        exporter.outputFileType = .mp4
+        exporter.outputFileType = AVFileType.mp4
         exporter.shouldOptimizeForNetworkUse = true
         exporter.timeRange = timeRange
 
