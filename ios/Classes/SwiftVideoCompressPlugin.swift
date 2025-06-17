@@ -186,6 +186,15 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let sourceVideoAsset = avController.getVideoAsset(sourceVideoUrl)
         let sourceVideoTrack = avController.getTrack(sourceVideoAsset)
 
+        // Get the natural size and ensure it's even
+        let naturalSize = sourceVideoTrack!.naturalSize
+        let evenWidth = Int(ceil(naturalSize.width / 2) * 2)
+        let evenHeight = Int(ceil(naturalSize.height / 2) * 2)
+        let targetSize = CGSize(width: evenWidth, height: evenHeight)
+        
+        channel.invokeMethod("log", arguments: "Original size: \(naturalSize.width)x\(naturalSize.height)")
+        channel.invokeMethod("log", arguments: "Target size: \(targetSize.width)x\(targetSize.height)")
+
         let uuid = NSUUID()
         let compressionUrl =
         Utility.getPathUrl("\(Utility.basePath())/\(Utility.getFileName(path))\(uuid.uuidString).\(sourceVideoType)")
@@ -211,40 +220,54 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         exporter.outputFileType = AVFileType.mp4
         exporter.shouldOptimizeForNetworkUse = true
         
+        // Always set the time range for trimming
         exporter.timeRange = timeRange
         channel.invokeMethod("log", arguments: "Applied time range for trimming: \(timeRange.start.seconds) to \(timeRange.end.seconds) seconds")
         
+        // Create video composition for even dimensions
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.renderSize = targetSize
+        videoComposition.frameDuration = CMTimeMake(value: 1, timescale: 30) // Default to 30fps if not specified
+        
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: CMTime.zero, duration: sourceVideoAsset.duration)
+        
+        let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceVideoTrack!)
+        
+        // Calculate the transform to maintain aspect ratio and center the video
+        let scaleX = targetSize.width / naturalSize.width
+        let scaleY = targetSize.height / naturalSize.height
+        let scale = min(scaleX, scaleY)
+        
+        let scaledWidth = naturalSize.width * scale
+        let scaledHeight = naturalSize.height * scale
+        
+        let translateX = (targetSize.width - scaledWidth) / 2
+        let translateY = (targetSize.height - scaledHeight) / 2
+        
+        var transform = CGAffineTransform(scaleX: scale, y: scale)
+        transform = transform.translatedBy(x: translateX, y: translateY)
+        
+        transformer.setTransform(transform, at: CMTime.zero)
+        instruction.layerInstructions = [transformer]
+        videoComposition.instructions = [instruction]
+        
+        // Apply frame rate if specified
         if frameRate != nil {
-            guard let sourceVideoTrack = sourceVideoTrack else {
-                channel.invokeMethod("log", arguments: "Error: Could not get source video track")
-                return
-            }
-            
-            let sourceFrameRate = sourceVideoTrack.nominalFrameRate
+            let sourceFrameRate = sourceVideoTrack!.nominalFrameRate
             channel.invokeMethod("log", arguments: "Source video frame rate: \(sourceFrameRate)")
             
-            // Only reduce frame rate if source is higher than target
             if sourceFrameRate > Float(frameRate!) {
                 channel.invokeMethod("log", arguments: "Reducing frame rate from \(sourceFrameRate) to \(frameRate!)")
-                let videoComposition = AVMutableVideoComposition()
                 videoComposition.frameDuration = CMTimeMake(value: 1, timescale: Int32(frameRate!))
-                videoComposition.renderSize = sourceVideoTrack.naturalSize
-                
-                let instruction = AVMutableVideoCompositionInstruction()
-                instruction.timeRange = CMTimeRange(start: CMTime.zero, duration: sourceVideoAsset.duration)
-                
-                let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceVideoTrack)
-                transformer.setTransform(sourceVideoTrack.preferredTransform, at: CMTime.zero)
-                
-                instruction.layerInstructions = [transformer]
-                videoComposition.instructions = [instruction]
-                
-                exporter.videoComposition = videoComposition
                 channel.invokeMethod("log", arguments: "Applied frame rate reduction")
             } else {
                 channel.invokeMethod("log", arguments: "Keeping original frame rate of \(sourceFrameRate)")
             }
         }
+        
+        exporter.videoComposition = videoComposition
+        channel.invokeMethod("log", arguments: "Applied video composition with even dimensions")
         
         Utility.deleteFile(compressionUrl.absoluteString)
         
