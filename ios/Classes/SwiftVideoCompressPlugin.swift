@@ -137,27 +137,6 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         }
     }
     
-    private func getExportPreset(_ quality: NSNumber)->String {
-        switch(quality) {
-        case 1:
-            return AVAssetExportPresetLowQuality    
-        case 2:
-            return AVAssetExportPresetMediumQuality
-        case 3:
-            return AVAssetExportPresetHighestQuality
-        case 4:
-            return AVAssetExportPreset640x480
-        case 5:
-            return AVAssetExportPreset960x540
-        case 6:
-            return AVAssetExportPreset1280x720
-        case 7:
-            return AVAssetExportPreset1920x1080
-        default:
-            return AVAssetExportPresetMediumQuality
-        }
-    }
-    
     private func compressVideo(_ path: String,_ quality: NSNumber,_ startTimeMs: Int64?,
                                _ endTimeMs: Int64?,_ frameRate: Int?,
                                _ result: @escaping FlutterResult) {
@@ -304,10 +283,12 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         instruction.layerInstructions = [layerInstruction]
         videoComposition.instructions = [instruction]
         
-        // MARK: - Exporter Setup
-        guard let exporter = AVAssetExportSession(asset: session, presetName: exportPreset) else {
+        // When using a custom video composition, AVAssetExportPresetPassthrough is often best.
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
             log("Error: Could not create AVAssetExportSession.")
-            sendResult(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
+            DispatchQueue.main.async {
+                result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
+            }
             return
         }
         
