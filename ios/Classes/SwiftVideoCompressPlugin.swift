@@ -195,6 +195,8 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let cmStartTime = CMTimeMake(value: startTimeMs ?? 0, timescale: 1000)
         let cmEndTime = CMTimeMake(value: endTimeMs ?? videoDurationInMs, timescale: 1000)
         let timeRange = CMTimeRange(start: cmStartTime, end: cmEndTime)
+        
+        channel.invokeMethod("log", arguments: "Time range: \(cmStartTime) to \(cmEndTime)")
 
         let isIncludeAudio = includeAudio != nil ? includeAudio! : true
         channel.invokeMethod("log", arguments: "Audio included: \(isIncludeAudio)")
