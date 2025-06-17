@@ -162,18 +162,9 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
                                _ endTimeMs: Int64?,_ frameRate: Int?,
                                _ result: @escaping FlutterResult) {
 
-        // Helper to dispatch results to Flutter on the main thread
-        func sendResult(_ value: Any) {
-            DispatchQueue.main.async {
-                result(value)
-            }
-        }
-
         // Helper to log messages to Flutter on the main thread
         func log(_ message: String) {
-            DispatchQueue.main.async {
-                self.channel.invokeMethod("log", arguments: message)
-            }
+            self.channel.invokeMethod("log", arguments: message)
         }
         
         log("Starting video compression...")
@@ -184,7 +175,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let sourceVideoAsset = avController.getVideoAsset(sourceVideoUrl)
         guard let sourceVideoTrack = avController.getTrack(sourceVideoAsset) else {
             log("Error: Could not get source video track. The file might be audio-only or corrupt.")
-            sendResult(FlutterError(code: "compression_error", message: "Failed to read video track.", details: nil))
+            result(FlutterError(code: "compression_error", message: "Failed to read video track.", details: nil))
             return
         }
 
@@ -199,7 +190,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
 
         if finalStartTimeMs >= finalEndTimeMs {
             log("Error: Start time (\(finalStartTimeMs)) must be less than end time (\(finalEndTimeMs)).")
-            sendResult(FlutterError(code: "invalid_argument", message: "Start time must be less than end time.", details: nil))
+            result(FlutterError(code: "invalid_argument", message: "Start time must be less than end time.", details: nil))
             return
         }
 
@@ -215,7 +206,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
 
         guard let exporter = AVAssetExportSession(asset: session, presetName: exportPreset) else {
             log("Error: Could not create AVAssetExportSession.")
-            sendResult(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
+            result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
             return
         }
         
@@ -306,13 +297,13 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
                 var json = self.getMediaInfoJson(path)
                 json["isCancel"] = true
                 let jsonString = Utility.keyValueToJson(json)
-                return sendResult(jsonString)
+                return result(jsonString)
             }
             log("Compression completed successfully")
             var json = self.getMediaInfoJson(Utility.excludeEncoding(compressionUrl.path))
             json["isCancel"] = false
             let jsonString = Utility.keyValueToJson(json)
-            sendResult(jsonString)
+            result(jsonString)
         })
         self.exporter = exporter
     }
