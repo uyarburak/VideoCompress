@@ -119,24 +119,20 @@ extension Compress on IVideoCompress {
   /// compress video from [path] return [Future<MediaInfo>]
   ///
   /// you can choose its quality by [quality],
-  /// determine whether to delete his source file by [deleteOrigin]
-  /// optional parameters [startTime] [duration] [includeAudio] [frameRate]
+  /// optional parameters [startTime] [duration] [frameRate]
   ///
   /// ## example
   /// ```dart
   /// final info = await _flutterVideoCompress.compressVideo(
   ///   file.path,
-  ///   deleteOrigin: true,
   /// );
   /// debugPrint(info.toJson());
   /// ```
   Future<MediaInfo?> compressVideo(
     String path, {
     VideoQuality quality = VideoQuality.DefaultQuality,
-    bool deleteOrigin = false,
     int? startTimeMs,
     int? endTimeMs,
-    bool? includeAudio,
     int frameRate = 30,
   }) async {
     if (isCompressing) {
@@ -155,10 +151,8 @@ extension Compress on IVideoCompress {
     final jsonStr = await _invoke<String>('compressVideo', {
       'path': path,
       'quality': quality.index,
-      'deleteOrigin': deleteOrigin,
       'startTimeMs': startTimeMs,
       'endTimeMs': endTimeMs,
-      'includeAudio': includeAudio,
       'frameRate': frameRate,
     });
 

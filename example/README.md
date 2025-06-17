@@ -104,7 +104,6 @@ class _MyHomePageState extends State<MyHomePage> {
           final info = await VideoCompress.compressVideo(
             file.path,
             quality: VideoQuality.MediumQuality,
-            deleteOrigin: false,
           );
 
           _counter = info.path;

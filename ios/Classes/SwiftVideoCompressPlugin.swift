@@ -37,13 +37,10 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         case "compressVideo":
             let path = args!["path"] as! String
             let quality = args!["quality"] as! NSNumber
-            let deleteOrigin = args!["deleteOrigin"] as! Bool
             let startTimeMs = args!["startTimeMs"] as? Int64
             let endTimeMs = args!["endTimeMs"] as? Int64
-            let includeAudio = args!["includeAudio"] as? Bool
             let frameRate = args!["frameRate"] as? Int
-            compressVideo(path, quality, deleteOrigin, startTimeMs, endTimeMs, includeAudio,
-                          frameRate, result)
+            compressVideo(path, quality, startTimeMs, endTimeMs, frameRate, result)
         case "cancelCompression":
             cancelCompression(result)
         case "deleteAllCache":
@@ -161,8 +158,8 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         }
     }
     
-    private func compressVideo(_ path: String,_ quality: NSNumber,_ deleteOrigin: Bool,_ startTimeMs: Int64?,
-                               _ endTimeMs: Int64?,_ includeAudio: Bool?,_ frameRate: Int?,
+    private func compressVideo(_ path: String,_ quality: NSNumber,_ startTimeMs: Int64?,
+                               _ endTimeMs: Int64?,_ frameRate: Int?,
                                _ result: @escaping FlutterResult) {
 
         // Helper to dispatch results to Flutter on the main thread

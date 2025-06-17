@@ -78,10 +78,8 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
             "compressVideo" -> {
                 val path = call.argument<String>("path")!!
                 val quality = call.argument<Int>("quality")!!
-                val deleteOrigin = call.argument<Boolean>("deleteOrigin")!!
                 val startTimeMs = call.argument<Int>("startTimeMs")
                 val endTimeMs = call.argument<Int>("endTimeMs")
-                val includeAudio = call.argument<Boolean>("includeAudio") ?: true
                 val frameRate = if (call.argument<Int>("frameRate")==null) 30 else call.argument<Int>("frameRate")
 
                 val tempDir: String = context.getExternalFilesDir("video_compress")!!.absolutePath
@@ -136,17 +134,13 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                     }
                 }
 
-                audioTrackStrategy = if (includeAudio) {
-                    val sampleRate = DefaultAudioStrategy.SAMPLE_RATE_AS_INPUT
-                    val channels = DefaultAudioStrategy.CHANNELS_AS_INPUT
+                val sampleRate = DefaultAudioStrategy.SAMPLE_RATE_AS_INPUT
+                val channels = DefaultAudioStrategy.CHANNELS_AS_INPUT
 
-                    DefaultAudioStrategy.builder()
+                audioTrackStrategy = DefaultAudioStrategy.builder()
                         .channels(channels)
                         .sampleRate(sampleRate)
                         .build()
-                } else {
-                    RemoveTrackStrategy()
-                }
 
                 val dataSource = if (startTimeMs != null || endTimeMs != null){
                     val source = UriDataSource(context, Uri.parse(path))
@@ -173,9 +167,6 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                                 val json = Utility(channelName).getMediaInfoJson(context, destPath)
                                 json.put("isCancel", false)
                                 result.success(json.toString())
-                                if (deleteOrigin) {
-                                    File(path).delete()
-                                }
                             }
 
                             override fun onTranscodeCanceled() {
