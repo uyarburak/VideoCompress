@@ -328,10 +328,16 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         }
         
         log("Starting export...")
-        let timer = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(self.updateProgress),
-                                         userInfo: exporter, repeats: true)
+        guard let finalExporter = exporter else {
+            log("Error: Export session is nil")
+            result(FlutterError(code: "export_error", message: "Export session is nil", details: nil))
+            return
+        }
         
-        exporter.exportAsynchronously(completionHandler: {
+        let timer = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(self.updateProgress),
+                                         userInfo: finalExporter, repeats: true)
+        
+        finalExporter.exportAsynchronously(completionHandler: {
             timer.invalidate()
             if(self.stopCommand) {
                 self.stopCommand = false
@@ -347,7 +353,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             let jsonString = Utility.keyValueToJson(json)
             result(jsonString)
         })
-        self.exporter = exporter
+        self.exporter = finalExporter
     }
     
     private func cancelCompression(_ result: FlutterResult) {
