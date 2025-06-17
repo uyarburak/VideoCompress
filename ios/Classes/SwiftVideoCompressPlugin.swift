@@ -273,21 +273,52 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
 
         if needsVideoComposition {
             do {
+                // Verify we have a valid video track
+                guard let videoTrack = sourceVideoTrack else {
+                    log("Error: No valid video track found")
+                    needsVideoComposition = false
+                    return
+                }
+
+                // Create a new composition
+                let composition = AVMutableComposition()
+                guard let compositionTrack = composition.addMutableTrack(
+                    withMediaType: .video,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                ) else {
+                    log("Error: Could not create composition track")
+                    needsVideoComposition = false
+                    return
+                }
+
+                // Insert the video track into the composition
+                try compositionTrack.insertTimeRange(
+                    CMTimeRange(start: .zero, duration: sourceVideoAsset.duration),
+                    of: videoTrack,
+                    at: .zero
+                )
+                compositionTrack.preferredTransform = videoTrack.preferredTransform
+
+                // Create the video composition
                 let instruction = AVMutableVideoCompositionInstruction()
-                instruction.timeRange = CMTimeRange(start: CMTime.zero, duration: sourceVideoAsset.duration)
+                instruction.timeRange = CMTimeRange(start: .zero, duration: sourceVideoAsset.duration)
                 
-                let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceVideoTrack)
-                transformer.setTransform(sourceVideoTrack.preferredTransform, at: CMTime.zero)
+                let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
+                transformer.setTransform(videoTrack.preferredTransform, at: .zero)
                 
                 instruction.layerInstructions = [transformer]
                 videoComposition.instructions = [instruction]
                 
+                // Update the exporter to use the new composition
+                exporter.asset = composition
                 exporter.videoComposition = videoComposition
-                log("Applied custom video composition.")
+                log("Applied custom video composition successfully")
             } catch {
                 log("Error applying video composition: \(error.localizedDescription)")
                 // Continue without video composition
                 needsVideoComposition = false
+                // Reset the exporter to use the original asset
+                exporter.asset = sourceVideoAsset
             }
         }
         
