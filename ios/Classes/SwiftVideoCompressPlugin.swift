@@ -211,15 +211,34 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         exporter.outputFileType = AVFileType.mp4
         exporter.shouldOptimizeForNetworkUse = true
         
-        if frameRate != nil {
-            channel.invokeMethod("log", arguments: "Setting frame rate to: \(frameRate!)")
-            let videoComposition = AVMutableVideoComposition(propertiesOf: sourceVideoAsset)
-            videoComposition.frameDuration = CMTimeMake(value: 1, timescale: Int32(frameRate!))
-            exporter.videoComposition = videoComposition
-        }
+        exporter.timeRange = timeRange
+        channel.invokeMethod("log", arguments: "Applied time range for trimming: \(timeRange.start.seconds) to \(timeRange.end.seconds) seconds")
         
-        if !isIncludeAudio {
-            exporter.timeRange = timeRange
+        if frameRate != nil {
+            let sourceFrameRate = sourceVideoTrack.nominalFrameRate
+            channel.invokeMethod("log", arguments: "Source video frame rate: \(sourceFrameRate)")
+            
+            // Only reduce frame rate if source is higher than target
+            if sourceFrameRate > Float(frameRate!) {
+                channel.invokeMethod("log", arguments: "Reducing frame rate from \(sourceFrameRate) to \(frameRate!)")
+                let videoComposition = AVMutableVideoComposition()
+                videoComposition.frameDuration = CMTimeMake(value: 1, timescale: Int32(frameRate!))
+                videoComposition.renderSize = sourceVideoTrack.naturalSize
+                
+                let instruction = AVMutableVideoCompositionInstruction()
+                instruction.timeRange = CMTimeRange(start: .zero, duration: sourceVideoAsset.duration)
+                
+                let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceVideoTrack)
+                transformer.setTransform(sourceVideoTrack.preferredTransform, at: .zero)
+                
+                instruction.layerInstructions = [transformer]
+                videoComposition.instructions = [instruction]
+                
+                exporter.videoComposition = videoComposition
+                channel.invokeMethod("log", arguments: "Applied frame rate reduction")
+            } else {
+                channel.invokeMethod("log", arguments: "Keeping original frame rate of \(sourceFrameRate)")
+            }
         }
         
         Utility.deleteFile(compressionUrl.absoluteString)
