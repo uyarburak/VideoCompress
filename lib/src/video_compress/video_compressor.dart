@@ -12,6 +12,7 @@ abstract class IVideoCompress extends CompressMixin {}
 class _VideoCompressImpl extends IVideoCompress {
   _VideoCompressImpl._() {
     initProcessCallback();
+    _initLogCallback();
   }
 
   static _VideoCompressImpl? _instance;
@@ -22,6 +23,16 @@ class _VideoCompressImpl extends IVideoCompress {
 
   static void _dispose() {
     _instance = null;
+  }
+
+  void _initLogCallback() {
+    channel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'log':
+          debugPrint('VideoCompress: ${call.arguments}');
+          break;
+      }
+    });
   }
 }
 

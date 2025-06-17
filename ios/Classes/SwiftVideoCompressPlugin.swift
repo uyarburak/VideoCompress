@@ -177,9 +177,12 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
     private func compressVideo(_ path: String,_ quality: NSNumber,_ deleteOrigin: Bool,_ startTimeMs: Int64?,
                                _ endTimeMs: Int64?,_ includeAudio: Bool?,_ frameRate: Int?,
                                _ result: @escaping FlutterResult) {
+        
+        channel.invokeMethod("log", arguments: "Starting video compression...")
         let sourceVideoUrl = Utility.getPathUrl(path)
         let sourceVideoType = "mp4"
         
+        channel.invokeMethod("log", arguments: "Loading video asset...")
         let sourceVideoAsset = avController.getVideoAsset(sourceVideoUrl)
         let sourceVideoTrack = avController.getTrack(sourceVideoAsset)
 
@@ -187,15 +190,19 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let compressionUrl =
         Utility.getPathUrl("\(Utility.basePath())/\(Utility.getFileName(path))\(uuid.uuidString).\(sourceVideoType)")
 
+        channel.invokeMethod("log", arguments: "Video duration: \(sourceVideoAsset.duration.seconds) seconds")
         let videoDurationInMs = Int64(sourceVideoAsset.duration.seconds * 1000)
         let cmStartTime = CMTimeMake(value: startTimeMs ?? 0, timescale: 1000)
         let cmEndTime = CMTimeMake(value: endTimeMs ?? videoDurationInMs, timescale: 1000)
         let timeRange = CMTimeRange(start: cmStartTime, end: cmEndTime)
 
         let isIncludeAudio = includeAudio != nil ? includeAudio! : true
+        channel.invokeMethod("log", arguments: "Audio included: \(isIncludeAudio)")
         
+        channel.invokeMethod("log", arguments: "Creating composition...")
         let session = getComposition(isIncludeAudio, timeRange, sourceVideoTrack!)
         
+        channel.invokeMethod("log", arguments: "Setting up export session with quality: \(getExportPreset(quality))")
         let exporter = AVAssetExportSession(asset: session, presetName: getExportPreset(quality))!
         
         exporter.outputURL = compressionUrl
@@ -203,6 +210,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         exporter.shouldOptimizeForNetworkUse = true
         
         if frameRate != nil {
+            channel.invokeMethod("log", arguments: "Setting frame rate to: \(frameRate!)")
             let videoComposition = AVMutableVideoComposition(propertiesOf: sourceVideoAsset)
             videoComposition.frameDuration = CMTimeMake(value: 1, timescale: Int32(frameRate!))
             exporter.videoComposition = videoComposition
@@ -214,6 +222,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         
         Utility.deleteFile(compressionUrl.absoluteString)
         
+        channel.invokeMethod("log", arguments: "Starting export...")
         let timer = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(self.updateProgress),
                                          userInfo: exporter, repeats: true)
         
@@ -221,6 +230,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             timer.invalidate()
             if(self.stopCommand) {
                 self.stopCommand = false
+                self.channel.invokeMethod("log", arguments: "Compression cancelled")
                 var json = self.getMediaInfoJson(path)
                 json["isCancel"] = true
                 let jsonString = Utility.keyValueToJson(json)
@@ -231,14 +241,16 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
                 do {
                     if fileManager.fileExists(atPath: path) {
                         try fileManager.removeItem(atPath: path)
+                        self.channel.invokeMethod("log", arguments: "Original file deleted")
                     }
                     self.exporter = nil
                     self.stopCommand = false
                 }
                 catch let error as NSError {
-                    print(error)
+                    self.channel.invokeMethod("log", arguments: "Error deleting original file: \(error.localizedDescription)")
                 }
             }
+            self.channel.invokeMethod("log", arguments: "Compression completed successfully")
             var json = self.getMediaInfoJson(Utility.excludeEncoding(compressionUrl.path))
             json["isCancel"] = false
             let jsonString = Utility.keyValueToJson(json)
