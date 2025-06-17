@@ -272,43 +272,42 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
 
         if finalSize != originalSize {
             needsVideoComposition = true
-            videoComposition.renderSize = finalSize
-            log("Final render size after ensuring even dimensions: \(finalSize)")
+        }
+
+        log("Final render size after ensuring even dimensions: \(finalSize)")
+        videoComposition.renderSize = finalSize
+
+        // Set frame rate if needed
+        if let targetFrameRate = frameRate, sourceVideoTrack.nominalFrameRate > Float(targetFrameRate) {
+            needsCustomComposition = true
+            videoComposition.frameDuration = CMTimeMake(value: 1, timescale: Int32(targetFrameRate))
+            log("Reducing frame rate to \(targetFrameRate)")
         } else {
-            videoComposition.renderSize = originalSize
-            log("Original dimensions are valid and do not need changes: \(originalSize)")
+            videoComposition.frameDuration = CMTimeMake(value: 1, timescale: Int32(sourceVideoTrack.nominalFrameRate))
+            log("Keeping original frame rate of \(sourceVideoTrack.nominalFrameRate)")
         }
 
-        if let targetFrameRate = frameRate {
-            let sourceFrameRate = sourceVideoTrack.nominalFrameRate
-            if sourceFrameRate > Float(targetFrameRate) {
-                needsVideoComposition = true
-                videoComposition.frameDuration = CMTimeMake(value: 1, timescale: Int32(targetFrameRate))
-                log("Reducing frame rate from \(sourceFrameRate) to \(targetFrameRate)")
-            } else {
-                log("Keeping original frame rate of \(sourceFrameRate)")
-            }
-        }
+        // This is the CRITICAL FIX. We must build a transform that includes scaling.
+        let assetSize = sourceVideoTrack.naturalSize
+        let scaleX = finalSize.width / assetSize.width
+        let scaleY = finalSize.height / assetSize.height
+        let scaleTransform = CGAffineTransform(scaleX: scaleX, y: scaleY)
+        
+        let finalTransform = sourceVideoTrack.preferredTransform.concatenating(scaleTransform)
 
-        // The main instruction
         let instruction = AVMutableVideoCompositionInstruction()
         instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
 
-        let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack)
-        // Apply the original video's orientation transform
-        transformer.setTransform(sourceVideoTrack.preferredTransform, at: .zero)
-        
-        instruction.layerInstructions = [transformer]
+        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack)
+        layerInstruction.setTransform(finalTransform, at: .zero)
+
+        instruction.layerInstructions = [layerInstruction]
         videoComposition.instructions = [instruction]
         
         // MARK: - Exporter Setup
-        // CRITICAL FIX: Use AVAssetExportPresetPassthrough when using a custom videoComposition
-        let exportPreset = needsVideoComposition ? AVAssetExportPresetPassthrough : getExportPreset(quality)
-        log("Setting up export session with quality: \(exportPreset)")
-
-        guard let exporter = AVAssetExportSession(asset: composition, presetName: exportPreset) else {
+        guard let exporter = AVAssetExportSession(asset: session, presetName: exportPreset) else {
             log("Error: Could not create AVAssetExportSession.")
-            result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
+            sendResult(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
             return
         }
         
