@@ -204,8 +204,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let exportPreset = getExportPreset(quality)
         log("Setting up export session with quality: \(exportPreset)")
 
-        var exporter = AVAssetExportSession(asset: session, presetName: exportPreset)
-        guard exporter != nil else {
+        guard let exporter = AVAssetExportSession(asset: session, presetName: exportPreset) else {
             log("Error: Could not create AVAssetExportSession.")
             result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
             return
@@ -318,7 +317,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
                 newExporter.videoComposition = videoComposition
                 
                 // Replace the original exporter with the new one
-                exporter = newExporter
+                self.exporter = newExporter
                 log("Applied custom video composition successfully")
             } catch {
                 log("Error applying video composition: \(error.localizedDescription)")
@@ -328,16 +327,10 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         }
         
         log("Starting export...")
-        guard let finalExporter = exporter else {
-            log("Error: Export session is nil")
-            result(FlutterError(code: "export_error", message: "Export session is nil", details: nil))
-            return
-        }
-        
         let timer = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(self.updateProgress),
-                                         userInfo: finalExporter, repeats: true)
+                                         userInfo: self.exporter, repeats: true)
         
-        finalExporter.exportAsynchronously(completionHandler: {
+        self.exporter?.exportAsynchronously(completionHandler: {
             timer.invalidate()
             if(self.stopCommand) {
                 self.stopCommand = false
@@ -353,7 +346,6 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             let jsonString = Utility.keyValueToJson(json)
             result(jsonString)
         })
-        self.exporter = finalExporter
     }
     
     private func cancelCompression(_ result: FlutterResult) {
