@@ -214,7 +214,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         }
 
         // MARK: - Video Composition for Scaling, Frame Rate, and Dimension Correction
-        var needsVideoComposition = false
+        var needsCustomComposition = false
         let videoComposition = AVMutableVideoComposition()
 
         // NEW: Define the maximum dimension allowed for the output video
@@ -250,7 +250,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let finalSize = CGSize(width: makeEven(targetSize.width), height: makeEven(targetSize.height))
 
         if finalSize != originalSize {
-            needsVideoComposition = true
+            needsCustomComposition = true
         }
 
         log("Final render size after ensuring even dimensions: \(finalSize)")
@@ -298,7 +298,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         // exporter.timeRange = timeRange
         // Note: exporter.timeRange is NOT needed here because we already trimmed the tracks when building the composition
         
-        if needsVideoComposition {
+        if needsCustomComposition {
             exporter.videoComposition = videoComposition
             log("Applied custom video composition.")
         }
