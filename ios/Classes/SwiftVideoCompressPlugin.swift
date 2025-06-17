@@ -273,17 +273,10 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
 
         if needsVideoComposition {
             do {
-                // Verify we have a valid video track
-                guard let videoTrack = sourceVideoTrack else {
-                    log("Error: No valid video track found")
-                    needsVideoComposition = false
-                    return
-                }
-
                 // Create a new composition
                 let composition = AVMutableComposition()
                 guard let compositionTrack = composition.addMutableTrack(
-                    withMediaType: .video,
+                    withMediaType: AVMediaType.video,
                     preferredTrackID: kCMPersistentTrackID_Invalid
                 ) else {
                     log("Error: Could not create composition track")
@@ -293,32 +286,43 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
 
                 // Insert the video track into the composition
                 try compositionTrack.insertTimeRange(
-                    CMTimeRange(start: .zero, duration: sourceVideoAsset.duration),
-                    of: videoTrack,
-                    at: .zero
+                    CMTimeRange(start: CMTime.zero, duration: sourceVideoAsset.duration),
+                    of: sourceVideoTrack,
+                    at: CMTime.zero
                 )
-                compositionTrack.preferredTransform = videoTrack.preferredTransform
+                compositionTrack.preferredTransform = sourceVideoTrack.preferredTransform
 
                 // Create the video composition
                 let instruction = AVMutableVideoCompositionInstruction()
-                instruction.timeRange = CMTimeRange(start: .zero, duration: sourceVideoAsset.duration)
+                instruction.timeRange = CMTimeRange(start: CMTime.zero, duration: sourceVideoAsset.duration)
                 
                 let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionTrack)
-                transformer.setTransform(videoTrack.preferredTransform, at: .zero)
+                transformer.setTransform(sourceVideoTrack.preferredTransform, at: CMTime.zero)
                 
                 instruction.layerInstructions = [transformer]
                 videoComposition.instructions = [instruction]
                 
-                // Update the exporter to use the new composition
-                exporter.asset = composition
-                exporter.videoComposition = videoComposition
+                // Create a new export session with the composition
+                guard let newExporter = AVAssetExportSession(asset: composition, presetName: exportPreset) else {
+                    log("Error: Could not create new export session with composition")
+                    needsVideoComposition = false
+                    return
+                }
+                
+                // Copy settings from the original exporter
+                newExporter.outputURL = compressionUrl
+                newExporter.outputFileType = AVFileType.mp4
+                newExporter.shouldOptimizeForNetworkUse = true
+                newExporter.timeRange = timeRange
+                newExporter.videoComposition = videoComposition
+                
+                // Replace the original exporter with the new one
+                exporter = newExporter
                 log("Applied custom video composition successfully")
             } catch {
                 log("Error applying video composition: \(error.localizedDescription)")
                 // Continue without video composition
                 needsVideoComposition = false
-                // Reset the exporter to use the original asset
-                exporter.asset = sourceVideoAsset
             }
         }
         
