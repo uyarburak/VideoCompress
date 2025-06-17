@@ -173,11 +173,14 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         
         log("Loading video asset...")
         let sourceVideoAsset = avController.getVideoAsset(sourceVideoUrl)
-        guard let sourceVideoTrack = avController.getTrack(sourceVideoAsset) else {
+        guard let sourceVideoTrack = sourceVideoAsset.tracks(withMediaType: .video).first else {
             log("Error: Could not get source video track. The file might be audio-only or corrupt.")
             result(FlutterError(code: "compression_error", message: "Failed to read video track.", details: nil))
             return
         }
+
+        // Get the audio track
+        let sourceAudioTrack = sourceVideoAsset.tracks(withMediaType: .audio).first
 
         let uuid = NSUUID()
         let compressionUrl =
@@ -198,22 +201,38 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
                                     end: CMTimeMake(value: finalEndTimeMs, timescale: 1000))
         log("Time range: \(timeRange.start.seconds)s to \(timeRange.end.seconds)s")
         
-        log("Creating composition...")
-        let session = sourceVideoTrack.asset!
-        
-        let exportPreset = getExportPreset(quality)
-        log("Setting up export session with quality: \(exportPreset)")
+       // MARK: - Create a new Composition with Video and Audio Tracks
+        log("Creating new composition...")
+        let composition = AVMutableComposition()
 
-        guard let exporter = AVAssetExportSession(asset: session, presetName: exportPreset) else {
-            log("Error: Could not create AVAssetExportSession.")
-            result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
+        guard let compositionVideoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
+            log("Error: Could not create video track in composition.")
+            sendResult(FlutterError(code: "composition_error", message: "Failed to create video track in composition.", details: nil))
             return
         }
         
-        exporter.outputURL = compressionUrl
-        exporter.outputFileType = AVFileType.mp4
-        exporter.shouldOptimizeForNetworkUse = true
-        exporter.timeRange = timeRange
+        // Add video track
+        do {
+            try compositionVideoTrack.insertTimeRange(timeRange, of: sourceVideoTrack, at: .zero)
+        } catch {
+            log("Error inserting video track: \(error.localizedDescription)")
+            sendResult(FlutterError(code: "composition_error", message: "Error inserting video track: \(error.localizedDescription)", details: nil))
+            return
+        }
+
+        // Add audio track if it exists
+        if let sourceAudioTrack = sourceAudioTrack {
+            if let compositionAudioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
+                do {
+                    try compositionAudioTrack.insertTimeRange(timeRange, of: sourceAudioTrack, at: .zero)
+                    log("Audio track added to composition.")
+                } catch {
+                    log("Warning: Could not insert audio track: \(error.localizedDescription). Proceeding without audio.")
+                }
+            }
+        } else {
+            log("No audio track found in source video.")
+        }
 
         // MARK: - Video Composition for Scaling, Frame Rate, and Dimension Correction
         var needsVideoComposition = false
@@ -271,16 +290,35 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             }
         }
 
+        // The main instruction
+        let instruction = AVMutableVideoCompositionInstruction()
+        instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
+
+        let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack)
+        // Apply the original video's orientation transform
+        transformer.setTransform(sourceVideoTrack.preferredTransform, at: .zero)
+        
+        instruction.layerInstructions = [transformer]
+        videoComposition.instructions = [instruction]
+        
+        // MARK: - Exporter Setup
+        // CRITICAL FIX: Use AVAssetExportPresetPassthrough when using a custom videoComposition
+        let exportPreset = needsVideoComposition ? AVAssetExportPresetPassthrough : getExportPreset(quality)
+        log("Setting up export session with quality: \(exportPreset)")
+
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: exportPreset) else {
+            log("Error: Could not create AVAssetExportSession.")
+            sendResult(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
+            return
+        }
+        
+        exporter.outputURL = compressionUrl
+        exporter.outputFileType = AVFileType.mp4
+        exporter.shouldOptimizeForNetworkUse = true
+        // exporter.timeRange = timeRange
+        // Note: exporter.timeRange is NOT needed here because we already trimmed the tracks when building the composition
+        
         if needsVideoComposition {
-            let instruction = AVMutableVideoCompositionInstruction()
-            instruction.timeRange = CMTimeRange(start: CMTime.zero, duration: sourceVideoAsset.duration)
-            
-            let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceVideoTrack)
-            transformer.setTransform(sourceVideoTrack.preferredTransform, at: CMTime.zero)
-            
-            instruction.layerInstructions = [transformer]
-            videoComposition.instructions = [instruction]
-            
             exporter.videoComposition = videoComposition
             log("Applied custom video composition.")
         }
