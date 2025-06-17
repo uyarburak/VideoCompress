@@ -103,8 +103,7 @@ class _MyHomePageState extends State<MyHomePage> {
           File file = await ImagePicker.pickVideo(source: ImageSource.gallery);
           final info = await VideoCompress.compressVideo(
             file.path,
-            quality: VideoQuality.MediumQuality,
-            deleteOrigin: false,
+            maxDimension: 1280,
           );
 
           _counter = info.path;

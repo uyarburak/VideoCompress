@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +12,7 @@ abstract class IVideoCompress extends CompressMixin {}
 class _VideoCompressImpl extends IVideoCompress {
   _VideoCompressImpl._() {
     initProcessCallback();
+    _initLogCallback();
   }
 
   static _VideoCompressImpl? _instance;
@@ -23,6 +23,16 @@ class _VideoCompressImpl extends IVideoCompress {
 
   static void _dispose() {
     _instance = null;
+  }
+
+  void _initLogCallback() {
+    channel.setMethodCallHandler((call) async {
+      switch (call.method) {
+        case 'log':
+          debugPrint('VideoCompress: ${call.arguments}');
+          break;
+      }
+    });
   }
 }
 
@@ -109,24 +119,20 @@ extension Compress on IVideoCompress {
   /// compress video from [path] return [Future<MediaInfo>]
   ///
   /// you can choose its quality by [quality],
-  /// determine whether to delete his source file by [deleteOrigin]
-  /// optional parameters [startTime] [duration] [includeAudio] [frameRate]
+  /// optional parameters [startTime] [duration] [frameRate]
   ///
   /// ## example
   /// ```dart
   /// final info = await _flutterVideoCompress.compressVideo(
   ///   file.path,
-  ///   deleteOrigin: true,
   /// );
   /// debugPrint(info.toJson());
   /// ```
   Future<MediaInfo?> compressVideo(
     String path, {
-    VideoQuality quality = VideoQuality.DefaultQuality,
-    bool deleteOrigin = false,
-    int? startTime,
-    int? duration,
-    bool? includeAudio,
+    int maxDimension = 1280,
+    int? startTimeMs,
+    int? endTimeMs,
     int frameRate = 30,
   }) async {
     if (isCompressing) {
@@ -144,11 +150,9 @@ extension Compress on IVideoCompress {
     setProcessingStatus(true);
     final jsonStr = await _invoke<String>('compressVideo', {
       'path': path,
-      'quality': quality.index,
-      'deleteOrigin': deleteOrigin,
-      'startTime': startTime,
-      'duration': duration,
-      'includeAudio': includeAudio,
+      'maxDimension': maxDimension,
+      'startTimeMs': startTimeMs,
+      'endTimeMs': endTimeMs,
       'frameRate': frameRate,
     });
 
