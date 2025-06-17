@@ -215,6 +215,11 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         channel.invokeMethod("log", arguments: "Applied time range for trimming: \(timeRange.start.seconds) to \(timeRange.end.seconds) seconds")
         
         if frameRate != nil {
+            guard let sourceVideoTrack = sourceVideoTrack else {
+                channel.invokeMethod("log", arguments: "Error: Could not get source video track")
+                return
+            }
+            
             let sourceFrameRate = sourceVideoTrack.nominalFrameRate
             channel.invokeMethod("log", arguments: "Source video frame rate: \(sourceFrameRate)")
             
@@ -226,10 +231,10 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
                 videoComposition.renderSize = sourceVideoTrack.naturalSize
                 
                 let instruction = AVMutableVideoCompositionInstruction()
-                instruction.timeRange = CMTimeRange(start: .zero, duration: sourceVideoAsset.duration)
+                instruction.timeRange = CMTimeRange(start: CMTime.zero, duration: sourceVideoAsset.duration)
                 
                 let transformer = AVMutableVideoCompositionLayerInstruction(assetTrack: sourceVideoTrack)
-                transformer.setTransform(sourceVideoTrack.preferredTransform, at: .zero)
+                transformer.setTransform(sourceVideoTrack.preferredTransform, at: CMTime.zero)
                 
                 instruction.layerInstructions = [transformer]
                 videoComposition.instructions = [instruction]
