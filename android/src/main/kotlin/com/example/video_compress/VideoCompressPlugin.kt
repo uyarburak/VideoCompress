@@ -23,6 +23,16 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Future
 
+// Android media & URI
+import android.media.MediaMetadataRetriever
+
+// Kotlin math extension for roundToInt()
+import kotlin.math.roundToInt
+
+// Date formatting
+import java.util.Date
+import java.util.Locale
+
 /**
  * VideoCompressPlugin
  */
