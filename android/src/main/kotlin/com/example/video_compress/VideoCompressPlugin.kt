@@ -80,61 +80,114 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                 val maxDimension = call.argument<Int>("maxDimension")!!
                 val startTimeMs = call.argument<Int>("startTimeMs")
                 val endTimeMs = call.argument<Int>("endTimeMs")
-                val frameRate = if (call.argument<Int>("frameRate")==null) 30 else call.argument<Int>("frameRate")
+                val frameRate = call.argument<Int>("frameRate") ?: 30
 
-                val tempDir: String = context.getExternalFilesDir("video_compress")!!.absolutePath
-                val out = SimpleDateFormat("yyyy-MM-dd hh-mm-ss").format(Date())
-                val destPath: String = tempDir + File.separator + "VID_" + out + path.hashCode() + ".mp4"
+                channel.invokeMethod("log", "Starting Android video compression for $path…")
 
-                val audioTrackStrategy: TrackStrategy
+                // 1) Extract original dimensions
+                val retriever = MediaMetadataRetriever().apply {
+                    setDataSource(context, Uri.parse(path))
+                }
+                val origW = retriever
+                    .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                    ?.toInt() ?: 0
+                val origH = retriever
+                    .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                    ?.toInt() ?: 0
+                retriever.release()
+                channel.invokeMethod("log", "Original size: ${origW}x${origH}")
 
-                val videoTrackStrategy = DefaultVideoStrategy.atMost(maxDimension)
-                            .frameRate(frameRate ?: 30)
-                            .build()
+                // 2) Compute scaled (raw) dimensions preserving aspect ratio
+                val maxDimF = maxDimension.toFloat()
+                val ratio = if (origW >= origH) {
+                    maxDimF / origW
+                } else {
+                    maxDimF / origH
+                }
+                val rawW = origW * ratio
+                val rawH = origH * ratio
+                channel.invokeMethod(
+                    "log",
+                    "Scaled raw size (before even): ${rawW.toInt()}x${rawH.toInt()}"
+                )
 
-                val sampleRate = DefaultAudioStrategy.SAMPLE_RATE_AS_INPUT
-                val channels = DefaultAudioStrategy.CHANNELS_AS_INPUT
+                // 3) Round to even numbers
+                fun even(v: Int) = if (v % 2 == 0) v else v - 1
+                val targetW = even(rawW.roundToInt())
+                val targetH = even(rawH.roundToInt())
+                channel.invokeMethod("log", "Final target size (even): ${targetW}x${targetH}")
 
-                audioTrackStrategy = DefaultAudioStrategy.builder()
-                        .channels(channels)
-                        .sampleRate(sampleRate)
-                        .build()
+                // 4) Build audio strategy
+                val audioTrackStrategy = DefaultAudioStrategy.builder()
+                    .channels(DefaultAudioStrategy.CHANNELS_AS_INPUT)
+                    .sampleRate(DefaultAudioStrategy.SAMPLE_RATE_AS_INPUT)
+                    .build()
+                channel.invokeMethod("log", "Audio strategy: input sample rate & channels")
 
-                val dataSource = if (startTimeMs != null || endTimeMs != null){
-                    val source = UriDataSource(context, Uri.parse(path))
+                // 5) Decide on trimming DataSource
+                val dataSource = if (startTimeMs != null || endTimeMs != null) {
+                    channel.invokeMethod("log", "Applying trim: start=$startTimeMs, end=$endTimeMs")
+                    val src = UriDataSource(context, Uri.parse(path))
                     if (endTimeMs == null) {
-                        TrimDataSource(source, (1000L * (startTimeMs ?: 0)).toLong())
+                        TrimDataSource(src, (startTimeMs ?: 0) * 1_000L)
                     } else {
-                        ClipDataSource(source, (1000L * (startTimeMs ?: 0)).toLong(), (1000L * endTimeMs.toLong()).toLong())
+                        ClipDataSource(
+                            src,
+                            (startTimeMs ?: 0) * 1_000L,
+                            endTimeMs.toLong() * 1_000L
+                        )
                     }
-                }else{
+                } else {
+                    channel.invokeMethod("log", "No trim requested, using full source")
                     UriDataSource(context, Uri.parse(path))
                 }
 
+                // 6) Build video strategy with explicit resize
+                channel.invokeMethod(
+                    "log",
+                    "Building video strategy: resize(${targetW},${targetH}) @${frameRate}fps"
+                )
+                val videoTrackStrategy = DefaultVideoStrategy.builder()
+                    .resize(targetW, targetH)
+                    .frameRate(frameRate)
+                    .build()
 
-                transcodeFuture = Transcoder.into(destPath!!)
-                        .addDataSource(dataSource)
-                        .setAudioTrackStrategy(audioTrackStrategy)
-                        .setVideoTrackStrategy(videoTrackStrategy)
-                        .setListener(object : TranscoderListener {
-                            override fun onTranscodeProgress(progress: Double) {
-                                channel.invokeMethod("updateProgress", progress * 100.00)
-                            }
-                            override fun onTranscodeCompleted(successCode: Int) {
-                                channel.invokeMethod("updateProgress", 100.00)
-                                val json = Utility(channelName).getMediaInfoJson(context, destPath)
-                                json.put("isCancel", false)
-                                result.success(json.toString())
-                            }
+                // 7) Prepare destination path
+                val tempDir = context.getExternalFilesDir("video_compress")!!.absolutePath
+                val timeStamp =
+                    SimpleDateFormat("yyyy-MM-dd HH-mm-ss", Locale.getDefault()).format(Date())
+                val destPath = "$tempDir/VID_${timeStamp}_${path.hashCode()}.mp4"
+                channel.invokeMethod("log", "Output will be saved to $destPath")
 
-                            override fun onTranscodeCanceled() {
-                                result.success(null)
-                            }
-
-                            override fun onTranscodeFailed(exception: Throwable) {
-                                result.success(null)
-                            }
-                        }).transcode()
+                // 8) Kick off Transcoder
+                channel.invokeMethod("log", "Starting Transcoder.into()")
+                transcodeFuture = Transcoder.into(destPath)
+                    .addDataSource(dataSource)
+                    .setAudioTrackStrategy(audioTrackStrategy)
+                    .setVideoTrackStrategy(videoTrackStrategy)
+                    .setListener(object : TranscoderListener {
+                        override fun onTranscodeProgress(progress: Double) {
+                            val pct = (progress * 100).toInt()
+                            channel.invokeMethod("log", "Progress: $pct%")
+                            channel.invokeMethod("updateProgress", progress * 100)
+                        }
+                        override fun onTranscodeCompleted(successCode: Int) {
+                            channel.invokeMethod("log", "Transcode completed (code $successCode)")
+                            channel.invokeMethod("updateProgress", 100.0)
+                            val json = Utility(channelName).getMediaInfoJson(context, destPath)
+                            json.put("isCancel", false)
+                            result.success(json.toString())
+                        }
+                        override fun onTranscodeCanceled() {
+                            channel.invokeMethod("log", "Transcode canceled by user")
+                            result.success(null)
+                        }
+                        override fun onTranscodeFailed(exception: Throwable) {
+                            channel.invokeMethod("log", "Transcode failed: ${exception.message}")
+                            result.success(null)
+                        }
+                    })
+                    .transcode()
             }
             else -> {
                 result.notImplemented()
