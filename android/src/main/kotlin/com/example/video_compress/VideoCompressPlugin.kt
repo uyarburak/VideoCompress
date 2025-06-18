@@ -128,7 +128,7 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                 channel.invokeMethod("log", "Final target size (even): ${targetW}x${targetH}")
 
                 // 4) Build audio strategy
-                val audioTrackStrategy = DefaultAudioStrategy.builder()
+                val audioTrackStrategy = DefaultAudioStrategy.Builder()
                     .channels(DefaultAudioStrategy.CHANNELS_AS_INPUT)
                     .sampleRate(DefaultAudioStrategy.SAMPLE_RATE_AS_INPUT)
                     .build()
@@ -157,7 +157,7 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                     "log",
                     "Building video strategy: resize(${targetW},${targetH}) @${frameRate}fps"
                 )
-                val videoTrackStrategy = DefaultVideoStrategy.builder()
+                val videoTrackStrategy = DefaultVideoStrategy.Builder()
                     .resize(targetW, targetH)
                     .frameRate(frameRate)
                     .build()
