@@ -5,6 +5,7 @@ import android.net.Uri
 import android.util.Log
 import com.otaliastudios.transcoder.Transcoder
 import com.otaliastudios.transcoder.TranscoderListener
+import com.otaliastudios.transcoder.resize.ExactResizer
 import com.otaliastudios.transcoder.source.ClipDataSource
 import com.otaliastudios.transcoder.source.TrimDataSource
 import com.otaliastudios.transcoder.source.UriDataSource
@@ -158,7 +159,7 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                     "Building video strategy: resize(${targetW},${targetH}) @${frameRate}fps"
                 )
                 val videoTrackStrategy = DefaultVideoStrategy.Builder()
-                    .resize(targetW, targetH)
+                    .addResizer(ExactResizer(targetW, targetH))
                     .frameRate(frameRate)
                     .build()
 
