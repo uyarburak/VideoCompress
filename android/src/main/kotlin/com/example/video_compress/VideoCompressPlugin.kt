@@ -6,7 +6,6 @@ import android.util.Log
 import com.otaliastudios.transcoder.Transcoder
 import com.otaliastudios.transcoder.TranscoderListener
 import com.otaliastudios.transcoder.resize.ExactResizer
-import com.otaliastudios.transcoder.source.ClipDataSource
 import com.otaliastudios.transcoder.source.TrimDataSource
 import com.otaliastudios.transcoder.source.UriDataSource
 import com.otaliastudios.transcoder.strategy.DefaultAudioStrategy
@@ -158,11 +157,14 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                     if (endTimeMs == null) {
                         TrimDataSource(src, (startTimeMs ?: 0) * 1_000L)
                     } else {
-                        ClipDataSource(
-                            src,
-                            (startTimeMs ?: 0) * 1_000L,
-                            endTimeMs.toLong() * 1_000L
-                        )
+                        if (!src.isInitialized()) src.initialize();
+                        val trimEndUs = src.getDurationUs() - endTimeMs.toLong() * 1_000L
+                        if (trimEndUs <= 0) {
+                            TrimDataSource(src, (startTimeMs ?: 0) * 1_000L)
+                        } else {
+                            TrimDataSource(src, (startTimeMs ?: 0) * 1_000L, trimEndUs)
+                        }
+                    }
                     }
                 } else {
                     channel.invokeMethod("log", "No trim requested, using full source")
