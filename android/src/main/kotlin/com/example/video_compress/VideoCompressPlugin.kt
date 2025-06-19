@@ -108,34 +108,50 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                 retriever.release()
                 channel.invokeMethod("log", "Original size: ${origW}x${origH}")
 
-                // 2) Compute scaled (raw) dimensions preserving aspect ratio
-                val maxDimF = maxDimension.toFloat()
-                val ratio = if (origW >= origH) {
-                    maxDimF / origW
-                } else {
-                    maxDimF / origH
-                }
-                val rawW = origW * ratio
-                val rawH = origH * ratio
-                channel.invokeMethod(
-                    "log",
-                    "Scaled raw size (before even): ${rawW.toInt()}x${rawH.toInt()}"
-                )
-
-                // 3) Round to even numbers
                 fun even(v: Int) = if (v % 2 == 0) v else v - 1
-                val targetW = even(rawW.roundToInt())
-                val targetH = even(rawH.roundToInt())
-                channel.invokeMethod("log", "Final target size (even): ${targetW}x${targetH}")
+                
+                // 1) Prepare the video strategy builder:
+                val builder = DefaultVideoStrategy.Builder()
+                    .frameRate(frameRate)
 
-                // 4) Build audio strategy
+                // 2) Pick resizer (clamp+even OR just even OR none):
+                if (origW > maxDimension || origH > maxDimension) {
+                    // Clamp the larger side, preserve aspect ratio:
+                    val ratio = if (origW >= origH) {
+                        maxDimension.toFloat() / origW
+                    } else {
+                        maxDimension.toFloat() / origH
+                    }
+                    val rawW = origW * ratio
+                    val rawH = origH * ratio
+
+                    // Round to nearest even ↓
+                    val targetW = even(rawW.roundToInt())
+                    val targetH = even(rawH.roundToInt())
+
+                    channel.invokeMethod("log", "Clamping & evening to $targetW×$targetH")
+                    builder.addResizer(ExactResizer(targetW, targetH))
+                } else if (origW % 2 != 0 || origH % 2 != 0) {
+                    // Only even out odd dimensions:
+                    val evenW = even(origW)
+                    val evenH = even(origH)
+
+                    channel.invokeMethod("log", "Evening out odd dimensions to $evenW×$evenH")
+                    builder.addResizer(ExactResizer(evenW, evenH))
+
+                } else {
+                    channel.invokeMethod("log", "No resize needed (within bounds & even).")
+                }
+                    
+                
+                // 3) Build audio strategy
                 val audioTrackStrategy = DefaultAudioStrategy.Builder()
                     .channels(DefaultAudioStrategy.CHANNELS_AS_INPUT)
                     .sampleRate(DefaultAudioStrategy.SAMPLE_RATE_AS_INPUT)
                     .build()
                 channel.invokeMethod("log", "Audio strategy: input sample rate & channels")
 
-                // 5) Decide on trimming DataSource
+                // 4) Decide on trimming DataSource
                 val dataSource = if (startTimeMs != null || endTimeMs != null) {
                     channel.invokeMethod("log", "Applying trim: start=$startTimeMs, end=$endTimeMs")
                     val src = UriDataSource(context, Uri.parse(path))
@@ -153,24 +169,21 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                     UriDataSource(context, Uri.parse(path))
                 }
 
-                // 6) Build video strategy with explicit resize
+                // 5) Build video strategy with explicit resize
                 channel.invokeMethod(
                     "log",
-                    "Building video strategy: resize(${targetW},${targetH}) @${frameRate}fps"
+                    "Building video strategy: @${frameRate}fps"
                 )
-                val videoTrackStrategy = DefaultVideoStrategy.Builder()
-                    .addResizer(ExactResizer(targetW, targetH))
-                    .frameRate(frameRate)
-                    .build()
+                val videoTrackStrategy = builder.build()
 
-                // 7) Prepare destination path
+                // 6) Prepare destination path
                 val tempDir = context.getExternalFilesDir("video_compress")!!.absolutePath
                 val timeStamp =
                     SimpleDateFormat("yyyy-MM-dd HH-mm-ss", Locale.getDefault()).format(Date())
                 val destPath = "$tempDir/VID_${timeStamp}_${path.hashCode()}.mp4"
                 channel.invokeMethod("log", "Output will be saved to $destPath")
 
-                // 8) Kick off Transcoder
+                // 7) Kick off Transcoder
                 channel.invokeMethod("log", "Starting Transcoder.into()")
                 transcodeFuture = Transcoder.into(destPath)
                     .addDataSource(dataSource)
