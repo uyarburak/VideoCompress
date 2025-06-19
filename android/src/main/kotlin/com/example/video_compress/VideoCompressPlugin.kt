@@ -159,7 +159,6 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                     } else {
                         MyClipDataSource(src, (startTimeMs ?: 0) * 1_000L, endTimeMs.toLong() * 1_000L)
                     }
-                    }
                 } else {
                     channel.invokeMethod("log", "No trim requested, using full source")
                     UriDataSource(context, Uri.parse(path))
