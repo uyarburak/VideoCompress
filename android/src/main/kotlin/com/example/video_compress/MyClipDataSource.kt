@@ -1,6 +1,9 @@
-package com.otaliastudios.transcoder.source
+package com.example.video_compress
 
 import androidx.annotation.NonNull
+import com.otaliastudios.transcoder.source.DataSource
+import com.otaliastudios.transcoder.source.DataSourceWrapper
+import com.otaliastudios.transcoder.source.TrimDataSource
 
 /**
  * A [DataSource] that clips the inner source within the given interval.
