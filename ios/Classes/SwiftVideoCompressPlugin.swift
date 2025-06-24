@@ -290,7 +290,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         instruction.layerInstructions = [layerInstruction]
         videoComposition.instructions = [instruction]
         
-        // MARK: - Export with AVAssetWriter for bitrate control
+        // MARK: - Export with AVAssetWriter for bitrate control (asynchronous)
         let actualBitRate = bitRate ?? 2_000_000
         log("Using video bitRate: \(actualBitRate) bps")
         
@@ -398,71 +398,78 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             }
         }
         
-        // Start reading and writing
-        assetWriter.startWriting()
-        assetReader.startReading()
-        assetWriter.startSession(atSourceTime: CMTime.zero)
-        
-        // Video encoding queue
-        let videoQueue = DispatchQueue(label: "videoQueue")
-        let videoSemaphore = DispatchSemaphore(value: 0)
-        
-        videoWriterInput.requestMediaDataWhenReady(on: videoQueue) {
-            while videoWriterInput.isReadyForMoreMediaData {
-                if let sampleBuffer = videoReaderOutput.copyNextSampleBuffer() {
-                    videoWriterInput.append(sampleBuffer)
-                } else {
-                    videoWriterInput.markAsFinished()
-                    videoSemaphore.signal()
-                    break
-                }
-            }
-        }
-        
-        // Audio encoding queue
-        let audioQueue = DispatchQueue(label: "audioQueue")
-        let audioSemaphore = DispatchSemaphore(value: 0)
-        
-        if let audioWriterInput = audioWriterInput {
-            audioWriterInput.requestMediaDataWhenReady(on: audioQueue) {
-                while audioWriterInput.isReadyForMoreMediaData {
-                    if let sampleBuffer = audioReaderOutput?.copyNextSampleBuffer() {
-                        audioWriterInput.append(sampleBuffer)
-                    } else {
-                        audioWriterInput.markAsFinished()
-                        audioSemaphore.signal()
-                        break
+        // Start reading and writing asynchronously
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                assetWriter.startWriting()
+                assetReader.startReading()
+                assetWriter.startSession(atSourceTime: CMTime.zero)
+                
+                // Create a dispatch group to wait for both video and audio
+                let group = DispatchGroup()
+                
+                // Process video asynchronously
+                group.enter()
+                videoWriterInput.requestMediaDataWhenReady(on: DispatchQueue(label: "videoQueue")) {
+                    while videoWriterInput.isReadyForMoreMediaData {
+                        if let sampleBuffer = videoReaderOutput.copyNextSampleBuffer() {
+                            videoWriterInput.append(sampleBuffer)
+                        } else {
+                            videoWriterInput.markAsFinished()
+                            group.leave()
+                            break
+                        }
                     }
                 }
-            }
-        } else {
-            audioSemaphore.signal()
-        }
-        
-        // Wait for both queues to finish
-        videoSemaphore.wait()
-        audioSemaphore.wait()
-        
-        assetReader.cancelReading()
-        assetWriter.finishWriting {
-            switch assetWriter.status {
-            case .completed:
-                log("Compression completed successfully")
-                var json = self.getMediaInfoJson(Utility.excludeEncoding(compressionUrl.path))
-                json["isCancel"] = false
-                let jsonString = Utility.keyValueToJson(json)
-                result(jsonString)
-            case .failed:
-                log("Error: Asset writer failed with error: \(assetWriter.error?.localizedDescription ?? "unknown error")")
-                result(FlutterError(code: "export_error", message: assetWriter.error?.localizedDescription, details: nil))
-            case .cancelled:
-                log("Compression cancelled")
-                var json = self.getMediaInfoJson(path)
-                json["isCancel"] = true
-                let jsonString = Utility.keyValueToJson(json)
-                result(jsonString)
-            default:
-                break
+                
+                // Process audio asynchronously if needed
+                if let audioWriterInput = audioWriterInput, let audioReaderOutput = audioReaderOutput {
+                    group.enter()
+                    audioWriterInput.requestMediaDataWhenReady(on: DispatchQueue(label: "audioQueue")) {
+                        while audioWriterInput.isReadyForMoreMediaData {
+                            if let sampleBuffer = audioReaderOutput.copyNextSampleBuffer() {
+                                audioWriterInput.append(sampleBuffer)
+                            } else {
+                                audioWriterInput.markAsFinished()
+                                group.leave()
+                                break
+                            }
+                        }
+                    }
+                }
+                
+                // Wait for both to finish
+                group.wait()
+                
+                assetReader.cancelReading()
+                assetWriter.finishWriting {
+                    DispatchQueue.main.async {
+                        switch assetWriter.status {
+                        case .completed:
+                            log("Compression completed successfully")
+                            var json = self.getMediaInfoJson(Utility.excludeEncoding(compressionUrl.path))
+                            json["isCancel"] = false
+                            let jsonString = Utility.keyValueToJson(json)
+                            result(jsonString)
+                        case .failed:
+                            log("Error: Asset writer failed with error: \(assetWriter.error?.localizedDescription ?? "unknown error")")
+                            result(FlutterError(code: "export_error", message: assetWriter.error?.localizedDescription, details: nil))
+                        case .cancelled:
+                            log("Compression cancelled")
+                            var json = self.getMediaInfoJson(path)
+                            json["isCancel"] = true
+                            let jsonString = Utility.keyValueToJson(json)
+                            result(jsonString)
+                        default:
+                            result(FlutterError(code: "export_error", message: "Unknown export status", details: nil))
+                        }
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    log("Error during compression: \(error.localizedDescription)")
+                    result(FlutterError(code: "export_error", message: error.localizedDescription, details: nil))
+                }
             }
         }
     }
