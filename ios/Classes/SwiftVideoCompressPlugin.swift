@@ -268,11 +268,11 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             log("Keeping original frame rate of \(sourceVideoTrack.nominalFrameRate)")
         }
 
-        // Calculate the scaled size while preserving aspect ratio
+        // Calculate the correct transform considering rotation
         let assetSize = sourceVideoTrack.naturalSize
         let preferredTransform = sourceVideoTrack.preferredTransform
 
-        // Calculate the transformed size after rotation
+        // Calculate the actual video size after rotation
         let transformRect = CGRect(origin: .zero, size: assetSize).applying(preferredTransform)
         let transformedSize = CGSize(width: abs(transformRect.size.width), 
                                     height: abs(transformRect.size.height))
@@ -281,34 +281,32 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         let renderAspect = finalSize.width / finalSize.height
         let assetAspect = transformedSize.width / transformedSize.height
 
-        var scaleFactor: CGFloat = 1.0
+        var scaleFactor: CGFloat
         if assetAspect > renderAspect {
-            // Asset is wider than render size
+            // Video is wider than target
             scaleFactor = finalSize.width / transformedSize.width
         } else {
-            // Asset is taller than render size
+            // Video is taller than target
             scaleFactor = finalSize.height / transformedSize.height
         }
 
-        // Apply scale transform
+        // Create scale transform
         let scaleTransform = CGAffineTransform(scaleX: scaleFactor, y: scaleFactor)
 
-        // Apply the original transform (rotation, etc.) FIRST
+        // Combine with original transform
         let scaledTransform = preferredTransform.concatenating(scaleTransform)
 
-        // Calculate translation to center the video
+        // Calculate translation to center
         let scaledWidth = transformedSize.width * scaleFactor
         let scaledHeight = transformedSize.height * scaleFactor
         let xOffset = (finalSize.width - scaledWidth) / 2
         let yOffset = (finalSize.height - scaledHeight) / 2
+        let translationTransform = CGAffineTransform(translationX: xOffset, y: yOffset)
 
-        // Apply translation AFTER rotation/scaling
-        let finalTransform = scaledTransform.concatenating(CGAffineTransform(translationX: xOffset, y: yOffset))
+        // Final transform: rotate/scale first, then translate
+        let finalTransform = scaledTransform.concatenating(translationTransform)
 
-        let instruction = AVMutableVideoCompositionInstruction()
-        instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
-
-        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack)
+        // Apply to layer instruction
         layerInstruction.setTransform(finalTransform, at: .zero)
 
         instruction.layerInstructions = [layerInstruction]
@@ -433,22 +431,38 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             }
         }
         
+        // ... existing code until after the asset reader setup ...
+
         // Start reading and writing asynchronously
         DispatchQueue.global(qos: .userInitiated).async {
             do {
+                // Start the asset writer and reader
                 assetWriter.startWriting()
                 assetReader.startReading()
+                
+                // Check if reader started successfully
+                if assetReader.status == .failed {
+                    throw assetReader.error ?? NSError(domain: "VideoCompress", code: 0, userInfo: [NSLocalizedDescriptionKey: "Asset reader failed to start"])
+                }
+                
                 assetWriter.startSession(atSourceTime: CMTime.zero)
                 
                 // Create a dispatch group to wait for both video and audio
                 let group = DispatchGroup()
                 
-                // Process video asynchronously
+                // Process video
                 group.enter()
-                videoWriterInput.requestMediaDataWhenReady(on: DispatchQueue(label: "videoQueue")) {
+                let videoQueue = DispatchQueue(label: "videoQueue")
+                videoWriterInput.requestMediaDataWhenReady(on: videoQueue) {
                     while videoWriterInput.isReadyForMoreMediaData {
                         if let sampleBuffer = videoReaderOutput.copyNextSampleBuffer() {
-                            videoWriterInput.append(sampleBuffer)
+                            if !videoWriterInput.append(sampleBuffer) {
+                                // Handle append failure
+                                if let error = assetWriter.error {
+                                    log("Video append error: \(error.localizedDescription)")
+                                }
+                                break
+                            }
                         } else {
                             videoWriterInput.markAsFinished()
                             group.leave()
@@ -457,13 +471,20 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
                     }
                 }
                 
-                // Process audio asynchronously if needed
-                if let audioWriterInput = audioWriterInput, let audioReaderOutput = audioReaderOutput {
+                // Process audio if needed
+                if let audioWriterInput = audioWriterInput {
                     group.enter()
-                    audioWriterInput.requestMediaDataWhenReady(on: DispatchQueue(label: "audioQueue")) {
+                    let audioQueue = DispatchQueue(label: "audioQueue")
+                    audioWriterInput.requestMediaDataWhenReady(on: audioQueue) {
                         while audioWriterInput.isReadyForMoreMediaData {
-                            if let sampleBuffer = audioReaderOutput.copyNextSampleBuffer() {
-                                audioWriterInput.append(sampleBuffer)
+                            if let sampleBuffer = audioReaderOutput?.copyNextSampleBuffer() {
+                                if !audioWriterInput.append(sampleBuffer) {
+                                    // Handle append failure
+                                    if let error = assetWriter.error {
+                                        log("Audio append error: \(error.localizedDescription)")
+                                    }
+                                    break
+                                }
                             } else {
                                 audioWriterInput.markAsFinished()
                                 group.leave()
@@ -476,7 +497,12 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
                 // Wait for both to finish
                 group.wait()
                 
-                assetReader.cancelReading()
+                // Handle any errors that occurred during processing
+                if let error = assetReader.error {
+                    throw error
+                }
+                
+                // Finalize writing
                 assetWriter.finishWriting {
                     DispatchQueue.main.async {
                         switch assetWriter.status {
@@ -487,8 +513,9 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
                             let jsonString = Utility.keyValueToJson(json)
                             result(jsonString)
                         case .failed:
-                            log("Error: Asset writer failed with error: \(assetWriter.error?.localizedDescription ?? "unknown error")")
-                            result(FlutterError(code: "export_error", message: assetWriter.error?.localizedDescription, details: nil))
+                            let errorMsg = assetWriter.error?.localizedDescription ?? "Unknown error"
+                            log("Asset writer failed: \(errorMsg)")
+                            result(FlutterError(code: "export_error", message: errorMsg, details: nil))
                         case .cancelled:
                             log("Compression cancelled")
                             var json = self.getMediaInfoJson(path)
