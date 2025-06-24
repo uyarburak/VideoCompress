@@ -40,7 +40,8 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             let startTimeMs = args!["startTimeMs"] as? Int64
             let endTimeMs = args!["endTimeMs"] as? Int64
             let frameRate = args!["frameRate"] as? Int
-            compressVideo(path, maxDimension, startTimeMs, endTimeMs, frameRate, result)
+            let bitRate = args!["bitRate"] as? Int
+            compressVideo(path, maxDimension, startTimeMs, endTimeMs, frameRate, bitRate, result)
         case "cancelCompression":
             cancelCompression(result)
         case "deleteAllCache":
@@ -213,6 +214,12 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             log("No audio track found in source video.")
         }
 
+
+
+        // MARK: - Video Composition Settings with Bitrate
+        let actualBitRate = bitRate ?? 2_000_000
+        log("Using video bitRate: \(actualBitRate) bps")
+
         // MARK: - Video Composition for Scaling, Frame Rate, and Dimension Correction
         var needsCustomComposition = false
         let videoComposition = AVMutableVideoComposition()
@@ -288,23 +295,27 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         instruction.layerInstructions = [layerInstruction]
         videoComposition.instructions = [instruction]
         
-        // MARK: - Export Configuration
-        let actualBitRate = bitRate ?? 2_000_000
-        log("Using video bitRate: \(actualBitRate) bps")
-
-        // Create custom video settings dictionary
-        let videoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: NSNumber(value: Int(finalSize.width)),
-            AVVideoHeightKey: NSNumber(value: Int(finalSize.height)),
-            AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: NSNumber(value: actualBitRate),
+        videoComposition.renderScale = 1.0
+        videoComposition.frameDuration = needsCustomComposition ? 
+            CMTimeMake(value: 1, timescale: Int32(frameRate!)) : 
+            CMTimeMake(value: 1, timescale: Int32(sourceVideoTrack.nominalFrameRate))
+        
+        // Add compression properties to composition
+        if let properties = videoComposition.instructions.first?.layerInstructions.first?.properties {
+            var updatedProperties = properties
+            updatedProperties[AVVideoCompressionPropertiesKey] = [
+                AVVideoAverageBitRateKey: actualBitRate,
                 AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
             ]
-        ]
+            videoComposition.instructions.first?.layerInstructions.first?.properties = updatedProperties
+        }
 
-        log("Creating export session with custom settings")
-        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
+        // MARK: - Export Setup
+        log("Setting up export session with custom composition")
+        guard let exporter = AVAssetExportSession(
+            asset: composition, 
+            presetName: AVAssetExportPresetPassthrough
+        ) else {
             log("Error: Could not create AVAssetExportSession.")
             result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
             return
@@ -313,14 +324,9 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         exporter.outputURL = compressionUrl
         exporter.outputFileType = AVFileType.mp4
         exporter.shouldOptimizeForNetworkUse = true
-        exporter.videoSettings = videoSettings
+        exporter.videoComposition = videoComposition
         // exporter.timeRange = timeRange
         // Note: exporter.timeRange is NOT needed here because we already trimmed the tracks when building the composition
-        
-        if needsCustomComposition {
-            exporter.videoComposition = videoComposition
-            log("Applied custom video composition.")
-        }
         
         log("Starting export...")
         let timer = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(self.updateProgress),
