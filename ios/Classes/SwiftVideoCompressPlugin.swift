@@ -247,7 +247,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         do {
             reader = try AVAssetReader(asset: composition)
             // make sure we only read the trimmed range
-+           reader?.timeRange = timeRange
+            reader?.timeRange = timeRange
             writer = try AVAssetWriter(outputURL: outURL, fileType: .mp4)
         } catch {
             log("Reader/Writer init error: \(error)")
