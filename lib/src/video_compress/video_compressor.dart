@@ -134,6 +134,7 @@ extension Compress on IVideoCompress {
     int? startTimeMs,
     int? endTimeMs,
     int frameRate = 30,
+    int bitRate = 2000000,
   }) async {
     if (isCompressing) {
       throw StateError('''VideoCompress Error: 
@@ -154,6 +155,7 @@ extension Compress on IVideoCompress {
       'startTimeMs': startTimeMs,
       'endTimeMs': endTimeMs,
       'frameRate': frameRate,
+      'bitRate': bitRate,
     });
 
     // ignore: invalid_use_of_protected_member

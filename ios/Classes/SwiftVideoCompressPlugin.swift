@@ -138,7 +138,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
     }
     
     private func compressVideo(_ path: String,_ maxDimensionPx: Int,_ startTimeMs: Int64?,
-                               _ endTimeMs: Int64?,_ frameRate: Int?,
+                               _ endTimeMs: Int64?,_ frameRate: Int?,_ bitRate: Int?,
                                _ result: @escaping FlutterResult) {
 
         // Helper to log messages to Flutter on the main thread
@@ -288,19 +288,32 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         instruction.layerInstructions = [layerInstruction]
         videoComposition.instructions = [instruction]
         
-        // When using a custom video composition, AVAssetExportPresetPassthrough is often best.
-        log("Setting up export session with AVAssetExportPresetHighestQuality preset to respect custom composition.")
-        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
+        // MARK: - Export Configuration
+        let actualBitRate = bitRate ?? 2_000_000
+        log("Using video bitRate: \(actualBitRate) bps")
+
+        // Create custom video settings dictionary
+        let videoSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: NSNumber(value: Int(finalSize.width)),
+            AVVideoHeightKey: NSNumber(value: Int(finalSize.height)),
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: NSNumber(value: actualBitRate),
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
+            ]
+        ]
+
+        log("Creating export session with custom settings")
+        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetPassthrough) else {
             log("Error: Could not create AVAssetExportSession.")
-            DispatchQueue.main.async {
-                result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
-            }
+            result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
             return
         }
         
         exporter.outputURL = compressionUrl
         exporter.outputFileType = AVFileType.mp4
         exporter.shouldOptimizeForNetworkUse = true
+        exporter.videoSettings = videoSettings
         // exporter.timeRange = timeRange
         // Note: exporter.timeRange is NOT needed here because we already trimmed the tracks when building the composition
         
