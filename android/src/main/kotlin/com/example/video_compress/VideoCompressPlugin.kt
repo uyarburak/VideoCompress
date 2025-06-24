@@ -91,6 +91,7 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                 val startTimeMs = call.argument<Int>("startTimeMs")
                 val endTimeMs = call.argument<Int>("endTimeMs")
                 val frameRate = call.argument<Int>("frameRate") ?: 30
+                val bitRate = call.argument<Int>("bitRate") ?: 2_000_000
 
                 channel.invokeMethod("log", "Starting Android video compression for $path…")
 
@@ -112,6 +113,7 @@ class VideoCompressPlugin : MethodCallHandler, FlutterPlugin {
                 // 1) Prepare the video strategy builder:
                 val builder = DefaultVideoStrategy.Builder()
                     .frameRate(frameRate)
+                    .bitRate(bitRate)
 
                 // 2) Pick resizer (clamp+even OR just even OR none):
                 if (origW > maxDimension || origH > maxDimension) {

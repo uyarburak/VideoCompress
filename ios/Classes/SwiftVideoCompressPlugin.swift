@@ -3,7 +3,8 @@ import AVFoundation
 
 public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
     private let channelName = "video_compress"
-    private var exporter: AVAssetExportSession? = nil
+    private var writer: AVAssetWriter?
+    private var reader: AVAssetReader?
     private var stopCommand = false
     private let channel: FlutterMethodChannel
     private let avController = AvController()
@@ -40,7 +41,8 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             let startTimeMs = args!["startTimeMs"] as? Int64
             let endTimeMs = args!["endTimeMs"] as? Int64
             let frameRate = args!["frameRate"] as? Int
-            compressVideo(path, maxDimension, startTimeMs, endTimeMs, frameRate, result)
+            let bitRate = args!["bitRate"] as? Int
+            compressVideo(path, maxDimension, startTimeMs, endTimeMs, frameRate, bitRate, result)
         case "cancelCompression":
             cancelCompression(result)
         case "deleteAllCache":
@@ -52,7 +54,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
             result(FlutterMethodNotImplemented)
         }
     }
-    
+
     private func getBitMap(_ path: String,_ quality: NSNumber,_ position: NSNumber,_ result: FlutterResult)-> Data?  {
         let url = Utility.getPathUrl(path)
         let asset = avController.getVideoAsset(url)
@@ -129,213 +131,229 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         result(string)
     }
     
-    
-    @objc private func updateProgress(timer:Timer) {
-        let asset = timer.userInfo as! AVAssetExportSession
-        if(!stopCommand) {
-            channel.invokeMethod("updateProgress", arguments: "\(String(describing: asset.progress * 100))")
-        }
+    private func log(_ message: String) {
+        channel.invokeMethod("log", arguments: message)
     }
-    
-    private func compressVideo(_ path: String,_ maxDimensionPx: Int,_ startTimeMs: Int64?,
-                               _ endTimeMs: Int64?,_ frameRate: Int?,
-                               _ result: @escaping FlutterResult) {
 
-        // Helper to log messages to Flutter on the main thread
-        func log(_ message: String) {
-            self.channel.invokeMethod("log", arguments: message)
-        }
-        
-        log("Starting video compression...")
-        let sourceVideoUrl = Utility.getPathUrl(path)
-        let sourceVideoType = "mp4"
-        
-        log("Loading video asset...")
-        let sourceVideoAsset = avController.getVideoAsset(sourceVideoUrl)
-        guard let sourceVideoTrack = sourceVideoAsset.tracks(withMediaType: .video).first else {
-            log("Error: Could not get source video track. The file might be audio-only or corrupt.")
-            result(FlutterError(code: "compression_error", message: "Failed to read video track.", details: nil))
-            return
-        }
-
-        // Get the audio track
-        let sourceAudioTrack = sourceVideoAsset.tracks(withMediaType: .audio).first
-
-        let uuid = NSUUID()
-        let compressionUrl =
-        Utility.getPathUrl("\(Utility.basePath())/\(Utility.getFileName(path))\(uuid.uuidString).\(sourceVideoType)")
-
-        // MARK: - Time Range Setup
-        let videoDurationInMs = Int64(sourceVideoAsset.duration.seconds * 1000)
-        let finalStartTimeMs = startTimeMs ?? 0
-        let finalEndTimeMs = endTimeMs ?? videoDurationInMs
-
-        if finalStartTimeMs >= finalEndTimeMs {
-            log("Error: Start time (\(finalStartTimeMs)) must be less than end time (\(finalEndTimeMs)).")
-            result(FlutterError(code: "invalid_argument", message: "Start time must be less than end time.", details: nil))
-            return
-        }
-
-        let timeRange = CMTimeRange(start: CMTimeMake(value: finalStartTimeMs, timescale: 1000),
-                                    end: CMTimeMake(value: finalEndTimeMs, timescale: 1000))
-        log("Time range: \(timeRange.start.seconds)s to \(timeRange.end.seconds)s")
-        
-       // MARK: - Create a new Composition with Video and Audio Tracks
-        log("Creating new composition...")
-        let composition = AVMutableComposition()
-
-        guard let compositionVideoTrack = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) else {
-            log("Error: Could not create video track in composition.")
-            result(FlutterError(code: "composition_error", message: "Failed to create video track in composition.", details: nil))
-            return
-        }
-        
-        // Add video track
-        do {
-            try compositionVideoTrack.insertTimeRange(timeRange, of: sourceVideoTrack, at: .zero)
-        } catch {
-            log("Error inserting video track: \(error.localizedDescription)")
-            result(FlutterError(code: "composition_error", message: "Error inserting video track: \(error.localizedDescription)", details: nil))
-            return
-        }
-
-        // Add audio track if it exists
-        if let sourceAudioTrack = sourceAudioTrack {
-            if let compositionAudioTrack = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid) {
-                do {
-                    try compositionAudioTrack.insertTimeRange(timeRange, of: sourceAudioTrack, at: .zero)
-                    log("Audio track added to composition.")
-                } catch {
-                    log("Warning: Could not insert audio track: \(error.localizedDescription). Proceeding without audio.")
-                }
-            }
-        } else {
-            log("No audio track found in source video.")
-        }
-
-        // MARK: - Video Composition for Scaling, Frame Rate, and Dimension Correction
-        var needsCustomComposition = false
-        let videoComposition = AVMutableVideoComposition()
-
-        // NEW: Define the maximum dimension allowed for the output video
-        let maxDimension: CGFloat = CGFloat(maxDimensionPx)
-
-        let originalSize = sourceVideoTrack.naturalSize
-        var targetSize = originalSize
-
-        // NEW: Step 1 - Scale down the video if it's larger than the max dimension
-        if targetSize.width > maxDimension || targetSize.height > maxDimension {
-            log("Original size \(originalSize) exceeds max dimension of \(maxDimension)px. Scaling down...")
-            let aspectRatio = targetSize.width / targetSize.height
-            
-            if targetSize.width > targetSize.height {
-                // Landscape or square video
-                targetSize.width = maxDimension
-                targetSize.height = maxDimension / aspectRatio
-            } else {
-                // Portrait video
-                targetSize.height = maxDimension
-                targetSize.width = maxDimension * aspectRatio
-            }
-            log("Scaled target size (preserving aspect ratio): \(targetSize)")
-        }
-
-        // NEW: Step 2 - Ensure the final dimensions (scaled or original) are even
-        // Function to make a dimension even by rounding up
-        func makeEven(_ value: CGFloat) -> CGFloat {
-            let intValue = Int(ceil(value))
-            return CGFloat(intValue % 2 == 0 ? intValue : intValue - 1)
-        }
-
-        let finalSize = CGSize(width: makeEven(targetSize.width), height: makeEven(targetSize.height))
-
-        if finalSize != originalSize {
-            needsCustomComposition = true
-        }
-
-        log("Final render size after ensuring even dimensions: \(finalSize)")
-        videoComposition.renderSize = finalSize
-
-        // Set frame rate if needed
-        if let targetFrameRate = frameRate, sourceVideoTrack.nominalFrameRate > Float(targetFrameRate) {
-            needsCustomComposition = true
-            videoComposition.frameDuration = CMTimeMake(value: 1, timescale: Int32(targetFrameRate))
-            log("Reducing frame rate to \(targetFrameRate)")
-        } else {
-            videoComposition.frameDuration = CMTimeMake(value: 1, timescale: Int32(sourceVideoTrack.nominalFrameRate))
-            log("Keeping original frame rate of \(sourceVideoTrack.nominalFrameRate)")
-        }
-
-        // This is the CRITICAL FIX. We must build a transform that includes scaling.
-        let assetSize = sourceVideoTrack.naturalSize
-        let scaleX = finalSize.width / assetSize.width
-        let scaleY = finalSize.height / assetSize.height
-        let scaleTransform = CGAffineTransform(scaleX: scaleX, y: scaleY)
-        
-        let tmpTransform = sourceVideoTrack.preferredTransform.concatenating(scaleTransform)
-
-        // Center the video
-        let xOffset = (finalSize.width - assetSize.width * scaleX) / 2
-        let yOffset = (finalSize.height - assetSize.height * scaleY) / 2
-        let finalTransform = tmpTransform.concatenating(CGAffineTransform(translationX: xOffset, y: yOffset))
-
-        let instruction = AVMutableVideoCompositionInstruction()
-        instruction.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
-
-        let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compositionVideoTrack)
-        layerInstruction.setTransform(finalTransform, at: .zero)
-
-        instruction.layerInstructions = [layerInstruction]
-        videoComposition.instructions = [instruction]
-        
-        // When using a custom video composition, AVAssetExportPresetPassthrough is often best.
-        log("Setting up export session with AVAssetExportPresetHighestQuality preset to respect custom composition.")
-        guard let exporter = AVAssetExportSession(asset: composition, presetName: AVAssetExportPresetHighestQuality) else {
-            log("Error: Could not create AVAssetExportSession.")
-            DispatchQueue.main.async {
-                result(FlutterError(code: "export_error", message: "Failed to create AVAssetExportSession.", details: nil))
-            }
-            return
-        }
-        
-        exporter.outputURL = compressionUrl
-        exporter.outputFileType = AVFileType.mp4
-        exporter.shouldOptimizeForNetworkUse = true
-        // exporter.timeRange = timeRange
-        // Note: exporter.timeRange is NOT needed here because we already trimmed the tracks when building the composition
-        
-        if needsCustomComposition {
-            exporter.videoComposition = videoComposition
-            log("Applied custom video composition.")
-        }
-        
-        log("Starting export...")
-        let timer = Timer.scheduledTimer(timeInterval: 0.1, target: self, selector: #selector(self.updateProgress),
-                                         userInfo: exporter, repeats: true)
-        
-        exporter.exportAsynchronously(completionHandler: {
-            timer.invalidate()
-            if(self.stopCommand) {
-                self.stopCommand = false
-                log("Compression cancelled")
-                var json = self.getMediaInfoJson(path)
-                json["isCancel"] = true
-                let jsonString = Utility.keyValueToJson(json)
-                return result(jsonString)
-            }
-            log("Compression completed successfully")
-            var json = self.getMediaInfoJson(Utility.excludeEncoding(compressionUrl.path))
-            json["isCancel"] = false
-            let jsonString = Utility.keyValueToJson(json)
-            result(jsonString)
-        })
-        self.exporter = exporter
-    }
-    
-    private func cancelCompression(_ result: FlutterResult) {
+    public func cancelCompression(_ result: FlutterResult) {
         stopCommand = true
-        exporter?.cancelExport()
+        writer?.cancelWriting()
+        reader?.cancelReading()
         result("")
     }
-    
+
+    private func compressVideo(_ path: String,
+                               _ maxDimensionPx: Int,
+                               _ startTimeMs: Int64?,
+                               _ endTimeMs: Int64?,
+                               _ frameRate: Int?,
+                               _ bitRate: Int?,
+                               _ result: @escaping FlutterResult) {
+
+        log("Starting video compression…")
+        let sourceURL = Utility.getPathUrl(path)
+        let uuid = NSUUID().uuidString
+        let outURL = Utility.getPathUrl("\(Utility.basePath())/\(Utility.getFileName(path))\(uuid).mp4")
+
+        // Load asset + track checks
+        let asset = avController.getVideoAsset(sourceURL)
+        guard let videoTrack = asset.tracks(withMediaType: .video).first else {
+            log("Error: No video track.")
+            return result(FlutterError(code: "compression_error",
+                                       message: "Failed to read video track.",
+                                       details: nil))
+        }
+        let audioTrack = asset.tracks(withMediaType: .audio).first
+
+        // Time-range
+        let durationMs = Int64(asset.duration.seconds * 1000)
+        let startMs = startTimeMs ?? 0
+        let endMs = endTimeMs ?? durationMs
+        if startMs >= endMs {
+            log("Error: startTime ≥ endTime")
+            return result(FlutterError(code: "invalid_argument",
+                                       message: "Start time must be less than end time.",
+                                       details: nil))
+        }
+        let timeRange = CMTimeRange(start: CMTimeMake(value: startMs, timescale: 1000),
+                                    end:   CMTimeMake(value: endMs,   timescale: 1000))
+        log("Time range: \(timeRange.start.seconds)–\(timeRange.end.seconds)s")
+        
+        // Composition
+        log("Building composition…")
+        let composition = AVMutableComposition()
+        let compVideoTrack = composition.addMutableTrack(withMediaType: .video,
+                                                         preferredTrackID: kCMPersistentTrackID_Invalid)!
+        try? compVideoTrack.insertTimeRange(timeRange, of: videoTrack, at: .zero)
+        if let aIn = audioTrack,
+           let compAudioTrack = composition.addMutableTrack(withMediaType: .audio,
+                                                            preferredTrackID: kCMPersistentTrackID_Invalid) {
+            try? compAudioTrack.insertTimeRange(timeRange, of: aIn, at: .zero)
+            log("Audio track added.")
+        } else {
+            log("No audio track.")
+        }
+
+        // VideoComposition for scale/frameRate
+        log("Configuring videoComposition…")
+        let videoComposition = AVMutableVideoComposition()
+        let maxDim = CGFloat(maxDimensionPx)
+        let origSize = videoTrack.naturalSize
+        var target = origSize
+        if target.width > maxDim || target.height > maxDim {
+            let ar = target.width/target.height
+            if target.width > target.height {
+                target.width  = maxDim
+                target.height = maxDim/ar
+            } else {
+                target.height = maxDim
+                target.width  = maxDim*ar
+            }
+            log("Scaled → \(target)")
+        }
+        func makeEven(_ v: CGFloat)->CGFloat {
+            let i = Int(ceil(v))
+            return CGFloat(i % 2 == 0 ? i : i-1)
+        }
+        let finalSize = CGSize(width: makeEven(target.width),
+                               height: makeEven(target.height))
+        log("Final renderSize: \(finalSize)")
+        videoComposition.renderSize = finalSize
+
+        if let fps = frameRate, videoTrack.nominalFrameRate > Float(fps) {
+            videoComposition.frameDuration = CMTimeMake(value: 1, timescale: Int32(fps))
+            log("Lowering FPS → \(fps)")
+        } else {
+            videoComposition.frameDuration = CMTimeMake(value: 1, timescale: Int32(videoTrack.nominalFrameRate))
+            log("Keeping original FPS")
+        }
+
+        // Transform + center
+        let sx = finalSize.width  / origSize.width
+        let sy = finalSize.height / origSize.height
+        var t = videoTrack.preferredTransform.concatenating(CGAffineTransform(scaleX: sx, y: sy))
+        let dx = (finalSize.width - origSize.width*sx)/2
+        let dy = (finalSize.height - origSize.height*sy)/2
+        t = t.concatenating(CGAffineTransform(translationX: dx, y: dy))
+        let instr = AVMutableVideoCompositionInstruction()
+        instr.timeRange = CMTimeRange(start: .zero, duration: composition.duration)
+        let layerInstr = AVMutableVideoCompositionLayerInstruction(assetTrack: compVideoTrack)
+        layerInstr.setTransform(t, at: .zero)
+        instr.layerInstructions = [layerInstr]
+        videoComposition.instructions = [instr]
+
+        // MARK: — Reader & Writer Setup —
+        log("Setting up reader & writer…")
+        do {
+            reader = try AVAssetReader(asset: composition)
+            writer = try AVAssetWriter(outputURL: outURL, fileType: .mp4)
+        } catch {
+            log("Reader/Writer init error: \(error)")
+            return result(FlutterError(code: "export_error",
+                                       message: error.localizedDescription,
+                                       details: nil))
+        }
+
+        // Video output from composition
+        let videoOutput = AVAssetReaderVideoCompositionOutput(videoTracks: [videoTrack],
+                                                              videoSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB
+        ])
+        videoOutput.videoComposition = videoComposition
+        reader!.add(videoOutput)
+
+        // Audio output
+        var audioOutput: AVAssetReaderTrackOutput?
+        if let aIn = audioTrack {
+            let ao = AVAssetReaderTrackOutput(track: aIn, outputSettings: nil)
+            reader!.add(ao)
+            audioOutput = ao
+        }
+
+        // Writer inputs
+        let videoSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey:  Int(finalSize.width),
+            AVVideoHeightKey: Int(finalSize.height),
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: bitRate ?? 2_000_000,
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
+            ]
+        ]
+        let vInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        vInput.expectsMediaDataInRealTime = false
+        writer!.add(vInput)
+
+        if audioOutput != nil {
+            let audioSettings: [String: Any] = [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVEncoderBitRateKey: 128_000,
+                AVNumberOfChannelsKey: 2,
+                AVSampleRateKey: 44_100
+            ]
+            let aInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+            aInput.expectsMediaDataInRealTime = false
+            writer!.add(aInput)
+        }
+
+        // Start
+        writer!.startWriting()
+        reader!.startReading()
+        writer!.startSession(atSourceTime: .zero)
+        log("Writing…")
+
+        let queue = DispatchQueue(label: "videoWriterQueue")
+
+        // Video loop
+        vInput.requestMediaDataWhenReady(on: queue) {
+            while vInput.isReadyForMoreMediaData && !self.stopCommand {
+                if let buf = videoOutput.copyNextSampleBuffer() {
+                    vInput.append(buf)
+                } else {
+                    vInput.markAsFinished()
+                    break
+                }
+            }
+        }
+
+        // Audio loop
+        if let ao = audioOutput,
+           let aInput = writer!.inputs.first(where: { $0.mediaType == .audio }) {
+            aInput.requestMediaDataWhenReady(on: queue) {
+                while aInput.isReadyForMoreMediaData && !self.stopCommand {
+                    if let buf = ao.copyNextSampleBuffer() {
+                        aInput.append(buf)
+                    } else {
+                        aInput.markAsFinished()
+                        break
+                    }
+                }
+            }
+        }
+
+        // Finish
+        writer!.finishWriting {
+            if self.stopCommand {
+                self.stopCommand = false
+                self.log("Compression cancelled")
+                var info = self.getMediaInfoJson(path)
+                info["isCancel"] = true
+                let json = Utility.keyValueToJson(info)
+                return result(json)
+            }
+            if self.writer!.status == .completed {
+                self.log("Compression succeeded")
+                var info = self.getMediaInfoJson(Utility.excludeEncoding(outURL.path))
+                info["isCancel"] = false
+                let json = Utility.keyValueToJson(info)
+                result(json)
+            } else {
+                self.log("Write error: \(self.writer!.error?.localizedDescription ?? "unknown")")
+                result(FlutterError(code: "export_error",
+                                    message: self.writer!.error?.localizedDescription,
+                                    details: nil))
+                
+            }
+        }
+    }
 }
