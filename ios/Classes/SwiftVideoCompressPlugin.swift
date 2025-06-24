@@ -270,28 +270,35 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
 
         // Calculate the scaled size while preserving aspect ratio
         let assetSize = sourceVideoTrack.naturalSize
+        let preferredTransform = sourceVideoTrack.preferredTransform
+
+        // Calculate the transformed size after rotation
+        let transformRect = CGRect(origin: .zero, size: assetSize).applying(preferredTransform)
+        let transformedSize = CGSize(width: abs(transformRect.size.width), 
+                                    height: abs(transformRect.size.height))
+
+        // Calculate aspect ratios
         let renderAspect = finalSize.width / finalSize.height
-        let assetAspect = assetSize.width / assetSize.height
+        let assetAspect = transformedSize.width / transformedSize.height
 
         var scaleFactor: CGFloat = 1.0
         if assetAspect > renderAspect {
             // Asset is wider than render size
-            scaleFactor = finalSize.width / assetSize.width
+            scaleFactor = finalSize.width / transformedSize.width
         } else {
             // Asset is taller than render size
-            scaleFactor = finalSize.height / assetSize.height
+            scaleFactor = finalSize.height / transformedSize.height
         }
 
         // Apply scale transform
         let scaleTransform = CGAffineTransform(scaleX: scaleFactor, y: scaleFactor)
 
         // Apply the original transform (rotation, etc.) FIRST
-        let originalTransform = sourceVideoTrack.preferredTransform
-        let scaledTransform = originalTransform.concatenating(scaleTransform)
+        let scaledTransform = preferredTransform.concatenating(scaleTransform)
 
         // Calculate translation to center the video
-        let scaledWidth = assetSize.width * scaleFactor
-        let scaledHeight = assetSize.height * scaleFactor
+        let scaledWidth = transformedSize.width * scaleFactor
+        let scaledHeight = transformedSize.height * scaleFactor
         let xOffset = (finalSize.width - scaledWidth) / 2
         let yOffset = (finalSize.height - scaledHeight) / 2
 
@@ -319,7 +326,7 @@ public class SwiftVideoCompressPlugin: NSObject, FlutterPlugin {
         }
         
         // Add this after setting the transform
-        layerInstruction.setCropRectangle(finalSize, at: .zero)
+        // layerInstruction.setCropRectangle(finalSize, at: .zero)
 
         // Add pixel aspect ratio settings to ensure square pixels
         let pixelAspectRatio = [AVVideoPixelAspectRatioKey: [
